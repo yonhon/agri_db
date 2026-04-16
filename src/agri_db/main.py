@@ -81,6 +81,14 @@ def probe_recent_pdf_links(session: requests.Session, days_back: int = 45) -> li
     return sorted(results, key=lambda x: x[1], reverse=True)
 
 
+def extract_pdf_text_basic(pdf_bytes: bytes) -> str:
+    pages: list[str] = []
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for page in pdf.pages:
+            pages.append(page.extract_text() or "")
+    return "\n\n".join(pages).strip()
+
+
 def extract_pdf_text(pdf_bytes: bytes) -> str:
     def extract_page_text(page: Any) -> str:
         words = page.extract_words(
@@ -350,6 +358,14 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
             pdf_bytes = response.content
             digest = sha256_hex(pdf_bytes)
             text = extract_pdf_text(pdf_bytes)
+            parsed_rows = parse_market_rows(text)
+            if len(parsed_rows) < 10:
+                # 座標再構築で行が細切れになるケースは従来抽出へフォールバック
+                fallback_text = extract_pdf_text_basic(pdf_bytes)
+                fallback_rows = parse_market_rows(fallback_text)
+                if len(fallback_rows) > len(parsed_rows):
+                    text = fallback_text
+                    parsed_rows = fallback_rows
             source_file_id = upsert_source_file(
                 conn=conn,
                 sale_date=sale_date,
@@ -360,9 +376,8 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
                 parse_status="fetched",
                 error_message=None,
             )
-            parsed_rows = parse_market_rows(text)
             replace_market_rows(conn, source_file_id, parsed_rows)
-            print(f"[OK] {sale_date} {source_url}")
+            print(f"[OK] {sale_date} {source_url} rows={len(parsed_rows)}")
         except Exception as exc:  # noqa: BLE001
             upsert_source_file(
                 conn=conn,
