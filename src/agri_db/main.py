@@ -19,6 +19,7 @@ DATE_PATTERN = re.compile(r"(20\d{6})")
 PDF_URL_PATTERN = re.compile(r"""["']([^"'<>\\s]+\.pdf)["']""", re.IGNORECASE)
 NUMBER_PATTERN = re.compile(r"\d[\d,]*")
 NUMBER_TOKEN_PATTERN = re.compile(r"^\d[\d,]*$")
+ITEM_NAME_PATTERN = re.compile(r"[A-Za-z\u3040-\u30ff\u3400-\u9fff]")
 
 
 def fetch_pdf_links(session: requests.Session) -> list[tuple[str, date]]:
@@ -285,6 +286,10 @@ def parse_decimal(token: str) -> Decimal | None:
         return None
 
 
+def is_valid_item_name(value: str) -> bool:
+    return bool(ITEM_NAME_PATTERN.search(value))
+
+
 def parse_market_rows(raw_text: str) -> list[dict]:
     rows: list[dict] = []
     for line_no, raw_line in enumerate(raw_text.splitlines(), start=1):
@@ -306,10 +311,12 @@ def parse_market_rows(raw_text: str) -> list[dict]:
 
         first_num_start = number_matches[0].start()
         item_name = line[:first_num_start].strip(" :")
-        if not item_name:
+        if not item_name or not is_valid_item_name(item_name):
             continue
 
         high_price, avg_price, low_price, quantity = parsed_numbers[-4:]
+        if high_price == 0 and avg_price == 0 and low_price == 0 and quantity == 0:
+            continue
         rows.append(
             {
                 "line_no": line_no,
@@ -400,11 +407,13 @@ def parse_market_rows_from_pdf(pdf_bytes: bytes) -> list[dict]:
                 first_value_index = picked[0]
                 name_parts = [t["text"] for t in tokens[:first_value_index] if t["text"]]
                 item_name = "".join(name_parts).strip(" :")
-                if not item_name:
+                if not item_name or not is_valid_item_name(item_name):
                     continue
 
                 raw_line = " ".join(t["text"] for t in tokens).strip()
                 high_price, avg_price, low_price, quantity = parsed_values
+                if high_price == 0 and avg_price == 0 and low_price == 0 and quantity == 0:
+                    continue
                 rows.append(
                     {
                         "line_no": global_line_no,
@@ -419,6 +428,23 @@ def parse_market_rows_from_pdf(pdf_bytes: bytes) -> list[dict]:
                 )
 
     return rows
+
+
+def score_rows(rows: list[dict]) -> tuple[int, int, int]:
+    non_zero_rows = 0
+    valid_name_rows = 0
+    for row in rows:
+        if is_valid_item_name(str(row.get("item_name", ""))):
+            valid_name_rows += 1
+        numbers = [
+            row.get("high_price", Decimal(0)),
+            row.get("avg_price", Decimal(0)),
+            row.get("low_price", Decimal(0)),
+            row.get("quantity", Decimal(0)),
+        ]
+        if any(n is not None and n != 0 for n in numbers):
+            non_zero_rows += 1
+    return (non_zero_rows, valid_name_rows, len(rows))
 
 
 def replace_market_rows(conn: psycopg.Connection, source_file_id: int, rows: list[dict]) -> None:
@@ -454,20 +480,16 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
             response.raise_for_status()
             pdf_bytes = response.content
             digest = sha256_hex(pdf_bytes)
-            text = extract_pdf_text(pdf_bytes)
-            parsed_rows = parse_market_rows_from_pdf(pdf_bytes)
-            if len(parsed_rows) < 10:
-                # 座標抽出が崩れた場合はテキスト抽出ベースへフォールバック
-                text_rows = parse_market_rows(text)
-                fallback_text = extract_pdf_text_basic(pdf_bytes)
-                fallback_rows = parse_market_rows(fallback_text)
-                best_rows = parsed_rows
-                if len(text_rows) > len(best_rows):
-                    best_rows = text_rows
-                if len(fallback_rows) > len(best_rows):
-                    text = fallback_text
-                    best_rows = fallback_rows
-                parsed_rows = best_rows
+            text_coord = extract_pdf_text(pdf_bytes)
+            text_basic = extract_pdf_text_basic(pdf_bytes)
+
+            candidate_rows: list[tuple[str, list[dict], str]] = [
+                ("coord_words", parse_market_rows_from_pdf(pdf_bytes), text_coord),
+                ("coord_text", parse_market_rows(text_coord), text_coord),
+                ("basic_text", parse_market_rows(text_basic), text_basic),
+            ]
+
+            best_name, parsed_rows, text = max(candidate_rows, key=lambda x: score_rows(x[1]))
             source_file_id = upsert_source_file(
                 conn=conn,
                 sale_date=sale_date,
@@ -479,7 +501,7 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
                 error_message=None,
             )
             replace_market_rows(conn, source_file_id, parsed_rows)
-            print(f"[OK] {sale_date} {source_url} rows={len(parsed_rows)}")
+            print(f"[OK] {sale_date} {source_url} rows={len(parsed_rows)} method={best_name}")
         except Exception as exc:  # noqa: BLE001
             upsert_source_file(
                 conn=conn,
