@@ -79,5 +79,7 @@ GitHubリポジトリ > Settings > Secrets and variables > Actions > New reposit
 - 1列目（品目名）は PyMuPDF の左列テキストから復元
 - 各列は先頭数値を採用して `quantity / high_price / avg_price / low_price` に正規化
 - 見出しキャプションが前回と変わった場合は `format_alert=true` と GitHub Actions warning を出力
+- `format_alert=true` が1件でも出た実行は `::error::` を出してジョブ失敗
+  - GitHub の標準通知（失敗通知メール/通知設定）で検知可能
 
 PDFレイアウトの差異により誤抽出が混ざる可能性があるため、`raw_line` を見ながらルール改善する運用を想定しています。

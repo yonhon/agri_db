@@ -597,7 +597,8 @@ def replace_market_rows(conn: psycopg.Connection, source_file_id: int, rows: lis
     conn.commit()
 
 
-def process_links(conn: psycopg.Connection, session: requests.Session, links: Iterable[tuple[str, date]]) -> None:
+def process_links(conn: psycopg.Connection, session: requests.Session, links: Iterable[tuple[str, date]]) -> list[dict[str, str]]:
+    alerts: list[dict[str, str]] = []
     for source_url, sale_date in links:
         try:
             response = session.get(source_url, timeout=60)
@@ -623,6 +624,14 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
             replace_market_rows(conn, source_file_id, parsed_rows)
 
             if format_alert:
+                alerts.append(
+                    {
+                        "sale_date": str(sale_date),
+                        "source_url": source_url,
+                        "previous_signature": previous_signature or "",
+                        "current_signature": caption_signature,
+                    }
+                )
                 print(
                     "::warning title=CaptionChanged::"
                     f"{sale_date} caption changed. prev={previous_signature} current={caption_signature}"
@@ -642,6 +651,19 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
                 error_message=str(exc)[:1000],
             )
             print(f"[NG] {sale_date} {source_url} {exc}")
+    return alerts
+
+
+def raise_on_format_alerts(alerts: list[dict[str, str]]) -> None:
+    if not alerts:
+        return
+    for alert in alerts:
+        print(
+            "::error title=FormatAlert::"
+            f"{alert['sale_date']} {alert['source_url']} "
+            f"prev={alert['previous_signature']} current={alert['current_signature']}"
+        )
+    raise RuntimeError(f"format_alert detected in {len(alerts)} file(s)")
 
 
 def main() -> None:
@@ -660,7 +682,8 @@ def main() -> None:
             print(f"[INFO] links from direct probe fallback: {len(links)}")
         if not links:
             raise RuntimeError("No PDF links found (listing + fallback probe)")
-        process_links(conn, session, links)
+        alerts = process_links(conn, session, links)
+        raise_on_format_alerts(alerts)
 
 
 if __name__ == "__main__":
