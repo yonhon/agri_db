@@ -497,6 +497,30 @@ def ensure_schema(conn: psycopg.Connection) -> None:
             from source_files;
             """
         )
+        cur.execute(
+            """
+            drop view if exists market_rows_jst;
+            """
+        )
+        cur.execute(
+            """
+            create or replace view market_rows_jst as
+            select
+              id,
+              source_file_id,
+              line_no,
+              raw_line,
+              item_name,
+              quantity,
+              high_price,
+              avg_price,
+              low_price,
+              parse_confidence,
+              created_at,
+              created_at at time zone 'Asia/Tokyo' as created_at_jst
+            from market_rows;
+            """
+        )
     conn.commit()
 
 
@@ -571,6 +595,46 @@ def upsert_source_file(
     return int(row[0])
 
 
+def get_source_file_snapshot(conn: psycopg.Connection, source_url: str) -> dict[str, Any] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            select id, pdf_sha256
+            from source_files
+            where source_url = %s;
+            """,
+            (source_url,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    return {"id": int(row[0]), "pdf_sha256": str(row[1] or "")}
+
+
+def touch_source_file_fetched(
+    conn: psycopg.Connection,
+    source_file_id: int,
+    sale_date: date,
+    pdf_sha256: str,
+    pdf_size_bytes: int,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            update source_files
+            set sale_date = %s,
+                pdf_sha256 = %s,
+                pdf_size_bytes = %s,
+                parse_status = 'fetched',
+                error_message = null,
+                fetched_at = now()
+            where id = %s;
+            """,
+            (sale_date, pdf_sha256, pdf_size_bytes, source_file_id),
+        )
+    conn.commit()
+
+
 def replace_market_rows(conn: psycopg.Connection, source_file_id: int, rows: list[dict[str, Any]]) -> None:
     with conn.cursor() as cur:
         cur.execute("delete from market_rows where source_file_id = %s;", (source_file_id,))
@@ -605,6 +669,18 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
             response.raise_for_status()
             pdf_bytes = response.content
             digest = sha256_hex(pdf_bytes)
+            existing = get_source_file_snapshot(conn, source_url)
+            if existing and existing["pdf_sha256"] == digest:
+                touch_source_file_fetched(
+                    conn=conn,
+                    source_file_id=int(existing["id"]),
+                    sale_date=sale_date,
+                    pdf_sha256=digest,
+                    pdf_size_bytes=len(pdf_bytes),
+                )
+                print(f"[SKIP] {sale_date} {source_url} unchanged_sha256={digest}")
+                continue
+
             raw_text = extract_raw_text_basic(pdf_bytes)
             parsed_rows, caption_signature = extract_market_rows_from_pdf(pdf_bytes)
             format_alert, previous_signature = detect_caption_change(conn, caption_signature)
