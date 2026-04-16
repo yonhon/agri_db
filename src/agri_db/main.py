@@ -3,7 +3,7 @@ import html
 import io
 import os
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Iterable
 from urllib.parse import urljoin
 
@@ -13,6 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.oki-kyoudou.jp/Shikyo/shikyo.php"
+PDF_URL_TEMPLATE = "https://www.oki-kyoudou.jp/Shikyo/PDF/HP%E5%B8%82%E6%B3%81{yyyymmdd}.pdf"
 DATE_PATTERN = re.compile(r"(20\d{6})")
 PDF_URL_PATTERN = re.compile(r"""["']([^"'<>\\s]+\.pdf)["']""", re.IGNORECASE)
 
@@ -53,6 +54,29 @@ def fetch_pdf_links(session: requests.Session) -> list[tuple[str, date]]:
     # URL重複を除外しつつ日付降順
     unique = {(u, d) for u, d in links}
     return sorted(unique, key=lambda x: x[1], reverse=True)
+
+
+def probe_recent_pdf_links(session: requests.Session, days_back: int = 45) -> list[tuple[str, date]]:
+    results: list[tuple[str, date]] = []
+    today = datetime.now().date()
+    for offset in range(days_back + 1):
+        target_date = today - timedelta(days=offset)
+        yyyymmdd = target_date.strftime("%Y%m%d")
+        url = PDF_URL_TEMPLATE.format(yyyymmdd=yyyymmdd)
+        try:
+            response = session.head(url, timeout=20, allow_redirects=True)
+            if response.status_code == 405:
+                response = session.get(url, timeout=30, stream=True)
+            if response.status_code != 200:
+                continue
+
+            content_type = (response.headers.get("Content-Type") or "").lower()
+            if "pdf" in content_type or url.lower().endswith(".pdf"):
+                results.append((url, target_date))
+        except requests.RequestException:
+            continue
+
+    return sorted(results, key=lambda x: x[1], reverse=True)
 
 
 def extract_pdf_text(pdf_bytes: bytes) -> str:
@@ -201,8 +225,12 @@ def main() -> None:
             }
         )
         links = fetch_pdf_links(session)
+        print(f"[INFO] links from listing page: {len(links)}")
         if not links:
-            raise RuntimeError("No PDF links found on source page")
+            links = probe_recent_pdf_links(session)
+            print(f"[INFO] links from direct probe fallback: {len(links)}")
+        if not links:
+            raise RuntimeError("No PDF links found (listing + fallback probe)")
         process_links(conn, session, links)
 
 
