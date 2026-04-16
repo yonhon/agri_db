@@ -68,11 +68,22 @@
           <h2>品目間相関分析</h2>
           <p id="corrMetaLabel" class="muted"></p>
         </div>
+        <div class="corr-legend" aria-label="相関スコア区分">
+          <span class="legend-chip score-band-1">-1.00~-0.80</span>
+          <span class="legend-chip score-band-2">-0.80~-0.60</span>
+          <span class="legend-chip score-band-3">-0.60~-0.40</span>
+          <span class="legend-chip score-band-4">-0.40~-0.20</span>
+          <span class="legend-chip score-band-5">-0.19~0.19</span>
+          <span class="legend-chip score-band-6">0.20~0.40</span>
+          <span class="legend-chip score-band-7">0.40~0.60</span>
+          <span class="legend-chip score-band-8">0.60~0.80</span>
+          <span class="legend-chip score-band-9">0.80~1.00</span>
+        </div>
         <div class="corr-grid">
           <article class="subpanel">
             <div class="panel-heading">
               <h3>上位相関ペア Top20</h3>
-              <p class="muted">Pearson順</p>
+              <p class="muted">相関スコア順</p>
             </div>
             <div class="table-wrap">
               <table class="corr-table">
@@ -80,8 +91,7 @@
                   <tr>
                     <th>順位</th>
                     <th>品目ペア</th>
-                    <th>Pearson</th>
-                    <th>Spearman</th>
+                    <th>相関スコア</th>
                     <th>共通日数</th>
                   </tr>
                 </thead>
@@ -100,8 +110,7 @@
                   <tr>
                     <th>順位</th>
                     <th>品目ペア</th>
-                    <th>Pearson</th>
-                    <th>Spearman</th>
+                    <th>相関スコア</th>
                     <th>共通日数</th>
                   </tr>
                 </thead>
@@ -120,8 +129,7 @@
               <tr>
                 <th>順位</th>
                 <th>相手品目</th>
-                <th>Pearson</th>
-                <th>Spearman</th>
+                <th>相関スコア</th>
                 <th>共通日数</th>
               </tr>
             </thead>
