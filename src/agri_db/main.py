@@ -1,4 +1,5 @@
 import hashlib
+import html
 import io
 import os
 import re
@@ -12,7 +13,8 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.oki-kyoudou.jp/Shikyo/shikyo.php"
-PDF_LINK_PATTERN = re.compile(r"/Shikyo/PDF/HP.+?(\d{8})\.pdf", re.IGNORECASE)
+DATE_PATTERN = re.compile(r"(20\d{6})")
+PDF_URL_PATTERN = re.compile(r"""["']([^"'<>\\s]+\.pdf)["']""", re.IGNORECASE)
 
 
 def fetch_pdf_links(session: requests.Session) -> list[tuple[str, date]]:
@@ -20,15 +22,32 @@ def fetch_pdf_links(session: requests.Session) -> list[tuple[str, date]]:
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
+    candidates: list[str] = []
+    for tag in soup.find_all(["a", "area"], href=True):
+        href = tag["href"].strip()
+        if href:
+            candidates.append(href)
+
+    # フロント実装差分でaタグ以外にPDFリンクが埋まっている場合のフォールバック
+    candidates.extend(match.group(1) for match in PDF_URL_PATTERN.finditer(response.text))
+
     links: list[tuple[str, date]] = []
-    for a_tag in soup.find_all("a", href=True):
-        href = a_tag["href"].strip()
-        match = PDF_LINK_PATTERN.search(href)
-        if not match:
+    for raw_url in candidates:
+        normalized = html.unescape(raw_url).replace("\\", "/").strip()
+        if ".pdf" not in normalized.lower():
             continue
-        yyyymmdd = match.group(1)
-        sale_date = datetime.strptime(yyyymmdd, "%Y%m%d").date()
-        absolute_url = urljoin(BASE_URL, href)
+
+        date_match = DATE_PATTERN.search(normalized)
+        if not date_match:
+            continue
+
+        yyyymmdd = date_match.group(1)
+        try:
+            sale_date = datetime.strptime(yyyymmdd, "%Y%m%d").date()
+        except ValueError:
+            continue
+
+        absolute_url = urljoin(BASE_URL, normalized)
         links.append((absolute_url, sale_date))
 
     # URL重複を除外しつつ日付降順
@@ -189,4 +208,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
