@@ -275,6 +275,21 @@ h2 {
   background: #fff;
 }
 
+.corr-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.legend-chip {
+  padding: 4px 7px;
+  border-radius: 999px;
+  border: 1px solid #d6ddd4;
+  font-size: 11px;
+  color: #29402f;
+}
+
 .corr-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -324,15 +339,19 @@ h2 {
 
 .corr-table td.corr {
   font-weight: 700;
+  text-align: right;
+  border-radius: 6px;
 }
 
-.corr-table td.corr.pos {
-  color: var(--up);
-}
-
-.corr-table td.corr.neg {
-  color: var(--down);
-}
+.score-band-1 { background: #2e4f7f; color: #fff; }
+.score-band-2 { background: #4f78aa; color: #fff; }
+.score-band-3 { background: #80a9d1; color: #173047; }
+.score-band-4 { background: #b6d0e6; color: #1e3749; }
+.score-band-5 { background: #e9ece8; color: #314237; }
+.score-band-6 { background: #f2ccc7; color: #552925; }
+.score-band-7 { background: #e59f93; color: #59251f; }
+.score-band-8 { background: #d67163; color: #fff; }
+.score-band-9 { background: #b84435; color: #fff; }
 
 .status {
   font-size: 12px;

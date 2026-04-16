@@ -62,6 +62,34 @@
     return value.toFixed(3);
   }
 
+  function scoreBand(score) {
+    if (score <= -0.8) {
+      return { band: 1, label: "-1.00~-0.80" };
+    }
+    if (score <= -0.6) {
+      return { band: 2, label: "-0.80~-0.60" };
+    }
+    if (score <= -0.4) {
+      return { band: 3, label: "-0.60~-0.40" };
+    }
+    if (score <= -0.2) {
+      return { band: 4, label: "-0.40~-0.20" };
+    }
+    if (score <= 0.19) {
+      return { band: 5, label: "-0.19~0.19" };
+    }
+    if (score <= 0.4) {
+      return { band: 6, label: "0.20~0.40" };
+    }
+    if (score <= 0.6) {
+      return { band: 7, label: "0.40~0.60" };
+    }
+    if (score <= 0.8) {
+      return { band: 8, label: "0.60~0.80" };
+    }
+    return { band: 9, label: "0.80~1.00" };
+  }
+
   function getLatestDate(rows) {
     return rows.length ? rows[rows.length - 1].sale_date : null;
   }
@@ -473,6 +501,7 @@
           itemB: b,
           pearson: p,
           spearman: s,
+          score: 0.6 * s + 0.4 * p,
           overlap: x.length,
         });
       }
@@ -482,18 +511,17 @@
 
   function renderPairTable(targetEl, rows, emptyText) {
     if (!rows.length) {
-      targetEl.innerHTML = `<tr><td colspan="5">${emptyText}</td></tr>`;
+      targetEl.innerHTML = `<tr><td colspan="4">${emptyText}</td></tr>`;
       return;
     }
     targetEl.innerHTML = rows
       .map((row, idx) => {
-        const cls = row.pearson >= 0 ? "pos" : "neg";
+        const zone = scoreBand(row.score);
         return `
           <tr>
             <td class="rank">${idx + 1}</td>
             <td>${row.itemA} × ${row.itemB}</td>
-            <td class="corr ${cls}">${fmtCorr(row.pearson)}</td>
-            <td>${fmtCorr(row.spearman)}</td>
+            <td class="corr score-band-${zone.band}" title="${zone.label}">${fmtCorr(row.score)}</td>
             <td>${row.overlap}</td>
           </tr>
         `;
@@ -504,33 +532,31 @@
   function renderFocusRanking(corrData) {
     const focus = state.corrFocusItem;
     if (!focus) {
-      corrFocusRankingBodyEl.innerHTML = '<tr><td colspan="5">品目を選択してください。</td></tr>';
+      corrFocusRankingBodyEl.innerHTML = '<tr><td colspan="4">品目を選択してください。</td></tr>';
       return;
     }
     const related = corrData.pairs
       .filter((p) => p.itemA === focus || p.itemB === focus)
       .map((p) => ({
         other: p.itemA === focus ? p.itemB : p.itemA,
-        pearson: p.pearson,
-        spearman: p.spearman,
+        score: p.score,
         overlap: p.overlap,
       }))
-      .sort((a, b) => Math.abs(b.pearson) - Math.abs(a.pearson))
+      .sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
       .slice(0, 20);
 
     if (!related.length) {
-      corrFocusRankingBodyEl.innerHTML = '<tr><td colspan="5">十分な共通日数のペアがありません。</td></tr>';
+      corrFocusRankingBodyEl.innerHTML = '<tr><td colspan="4">十分な共通日数のペアがありません。</td></tr>';
       return;
     }
     corrFocusRankingBodyEl.innerHTML = related
       .map((r, idx) => {
-        const cls = r.pearson >= 0 ? "pos" : "neg";
+        const zone = scoreBand(r.score);
         return `
           <tr>
             <td class="rank">${idx + 1}</td>
             <td>${r.other}</td>
-            <td class="corr ${cls}">${fmtCorr(r.pearson)}</td>
-            <td>${fmtCorr(r.spearman)}</td>
+            <td class="corr score-band-${zone.band}" title="${zone.label}">${fmtCorr(r.score)}</td>
             <td>${r.overlap}</td>
           </tr>
         `;
@@ -540,8 +566,8 @@
 
   function renderCorrelationTables(periodRows) {
     const corrData = computeCorrelationData(periodRows);
-    const top = [...corrData.pairs].sort((a, b) => b.pearson - a.pearson).slice(0, 20);
-    const bottom = [...corrData.pairs].sort((a, b) => a.pearson - b.pearson).slice(0, 20);
+    const top = [...corrData.pairs].sort((a, b) => b.score - a.score).slice(0, 20);
+    const bottom = [...corrData.pairs].sort((a, b) => a.score - b.score).slice(0, 20);
 
     renderPairTable(corrTopPairsBodyEl, top, "表示可能な相関ペアがありません。");
     renderPairTable(corrBottomPairsBodyEl, bottom, "表示可能な相関ペアがありません。");
