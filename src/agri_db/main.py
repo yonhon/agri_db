@@ -136,6 +136,27 @@ def ensure_schema(conn: psycopg.Connection) -> None:
               execute function touch_updated_at_source_files();
             """
         )
+        cur.execute(
+            """
+            create or replace view source_files_jst as
+            select
+              id,
+              sale_date,
+              source_url,
+              pdf_sha256,
+              pdf_size_bytes,
+              raw_text,
+              parse_status,
+              error_message,
+              fetched_at,
+              created_at,
+              updated_at,
+              fetched_at at time zone 'Asia/Tokyo' as fetched_at_jst,
+              created_at at time zone 'Asia/Tokyo' as created_at_jst,
+              updated_at at time zone 'Asia/Tokyo' as updated_at_jst
+            from source_files;
+            """
+        )
     conn.commit()
 
 
