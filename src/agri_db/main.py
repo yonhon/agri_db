@@ -550,6 +550,8 @@ def ensure_schema(conn: psycopg.Connection) -> None:
             group by sf.sale_date, mr.item_name;
             """
         )
+        # Ensure PostgREST refreshes schema cache after view/index updates.
+        cur.execute("select pg_notify('pgrst', 'reload schema');")
     conn.commit()
 
 
