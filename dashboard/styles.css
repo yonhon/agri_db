@@ -1,0 +1,284 @@
+:root {
+  --bg: #f3f7f1;
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-strong: #ffffff;
+  --text: #162015;
+  --muted: #5b6c5a;
+  --line: #d4dfd1;
+  --up: #ce4d41;
+  --down: #1a76a2;
+  --accent: #2f7f56;
+  --shadow: 0 16px 40px rgba(22, 32, 21, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at 10% 10%, #e6efe1 0%, transparent 40%),
+    radial-gradient(circle at 85% 85%, #dfefe7 0%, transparent 38%), var(--bg);
+}
+
+.bg-shape {
+  position: fixed;
+  z-index: 0;
+  border-radius: 999px;
+  filter: blur(56px);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.bg-shape-a {
+  width: 280px;
+  height: 280px;
+  background: #8ad0a9;
+  top: -80px;
+  left: -60px;
+}
+
+.bg-shape-b {
+  width: 320px;
+  height: 320px;
+  background: #a7cfe8;
+  bottom: -90px;
+  right: -70px;
+}
+
+.container {
+  position: relative;
+  z-index: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 22px 14px 28px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: "M PLUS 1p", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+h1 {
+  margin: 4px 0 2px;
+  font-size: 30px;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.control-group {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-strong);
+}
+
+button {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.period-btn {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.period-btn.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.reload-btn {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+}
+
+.panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.kpi-card {
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.kpi-card.up {
+  border-top: 3px solid var(--up);
+}
+
+.kpi-card.down {
+  border-top: 3px solid var(--down);
+}
+
+.kpi-rank {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.kpi-item {
+  font-size: 15px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.kpi-rate {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.kpi-rate.up {
+  color: var(--up);
+}
+
+.kpi-rate.down {
+  color: var(--down);
+}
+
+.kpi-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.middle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel {
+  border-radius: 16px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.panel-full {
+  margin-bottom: 10px;
+}
+
+.field-label {
+  display: block;
+  margin: 6px 0 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.field {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  font-family: inherit;
+}
+
+.field-multi {
+  min-height: 84px;
+}
+
+.chart {
+  width: 100%;
+}
+
+.chart-mid {
+  height: 360px;
+  margin-top: 8px;
+}
+
+.chart-lg {
+  height: 400px;
+}
+
+.status {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 8px 2px 0;
+}
+
+@media (max-width: 1024px) {
+  .kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
+  .middle-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  h1 {
+    font-size: 24px;
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .toolbar {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
