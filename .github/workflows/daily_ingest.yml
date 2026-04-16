@@ -1,0 +1,33 @@
+name: Daily Shikyo Ingest
+
+on:
+  workflow_dispatch:
+  schedule:
+    # JST 14:30
+    - cron: "30 5 * * *"
+    # 予備実行（JST 16:00）
+    - cron: "0 7 * * *"
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run ingest
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python -m src.agri_db.main
+
