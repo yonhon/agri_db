@@ -63,6 +63,8 @@ GitHubリポジトリ > Settings > Secrets and variables > Actions > New reposit
 
 - PDFメタ情報（URL、日付、サイズ、ハッシュ）
 - PDFから抽出した全文テキスト（`raw_text`）
+- テーブルキャプション署名（`caption_signature`）
+- フォーマット変化アラート（`format_alert`）
 - 取得失敗時のエラー（`parse_status`, `error_message`）
 - 行単位の構造化データ（`market_rows`）
   - `item_name`
@@ -72,8 +74,10 @@ GitHubリポジトリ > Settings > Secrets and variables > Actions > New reposit
 
 ## 8. 構造化抽出の現仕様
 
-- `raw_text` を行ごとに解析
-- 「数値が4つ以上ある行」を対象
-- 行中の末尾4数値を `high_price / avg_price / low_price / quantity` として格納
+- `pdfplumber.find_tables()` で表抽出
+- 欠損セルを `PyMuPDF` の単語座標で補完
+- 1列目（品目名）は PyMuPDF の左列テキストから復元
+- 各列は先頭数値を採用して `quantity / high_price / avg_price / low_price` に正規化
+- 見出しキャプションが前回と変わった場合は `format_alert=true` と GitHub Actions warning を出力
 
 PDFレイアウトの差異により誤抽出が混ざる可能性があるため、`raw_line` を見ながらルール改善する運用を想定しています。

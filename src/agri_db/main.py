@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 from urllib.parse import urljoin
 
+import fitz  # PyMuPDF
 import pdfplumber
 import psycopg
 import requests
@@ -17,8 +18,6 @@ BASE_URL = "https://www.oki-kyoudou.jp/Shikyo/shikyo.php"
 PDF_URL_TEMPLATE = "https://www.oki-kyoudou.jp/Shikyo/PDF/HP%E5%B8%82%E6%B3%81{yyyymmdd}.pdf"
 DATE_PATTERN = re.compile(r"(20\d{6})")
 PDF_URL_PATTERN = re.compile(r"""["']([^"'<>\\s]+\.pdf)["']""", re.IGNORECASE)
-NUMBER_PATTERN = re.compile(r"\d[\d,]*")
-NUMBER_TOKEN_PATTERN = re.compile(r"^\d[\d,]*$")
 ITEM_NAME_PATTERN = re.compile(r"[A-Za-z\u3040-\u30ff\u3400-\u9fff]")
 
 
@@ -32,8 +31,6 @@ def fetch_pdf_links(session: requests.Session) -> list[tuple[str, date]]:
         href = tag["href"].strip()
         if href:
             candidates.append(href)
-
-    # フロント実装差分でaタグ以外にPDFリンクが埋まっている場合のフォールバック
     candidates.extend(match.group(1) for match in PDF_URL_PATTERN.finditer(response.text))
 
     links: list[tuple[str, date]] = []
@@ -41,21 +38,17 @@ def fetch_pdf_links(session: requests.Session) -> list[tuple[str, date]]:
         normalized = html.unescape(raw_url).replace("\\", "/").strip()
         if ".pdf" not in normalized.lower():
             continue
-
         date_match = DATE_PATTERN.search(normalized)
         if not date_match:
             continue
-
         yyyymmdd = date_match.group(1)
         try:
             sale_date = datetime.strptime(yyyymmdd, "%Y%m%d").date()
         except ValueError:
             continue
-
         absolute_url = urljoin(BASE_URL, normalized)
         links.append((absolute_url, sale_date))
 
-    # URL重複を除外しつつ日付降順
     unique = {(u, d) for u, d in links}
     return sorted(unique, key=lambda x: x[1], reverse=True)
 
@@ -73,68 +66,325 @@ def probe_recent_pdf_links(session: requests.Session, days_back: int = 45) -> li
                 response = session.get(url, timeout=30, stream=True)
             if response.status_code != 200:
                 continue
-
             content_type = (response.headers.get("Content-Type") or "").lower()
             if "pdf" in content_type or url.lower().endswith(".pdf"):
                 results.append((url, target_date))
         except requests.RequestException:
             continue
-
     return sorted(results, key=lambda x: x[1], reverse=True)
-
-
-def extract_pdf_text_basic(pdf_bytes: bytes) -> str:
-    pages: list[str] = []
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        for page in pdf.pages:
-            pages.append(page.extract_text() or "")
-    return "\n\n".join(pages).strip()
-
-
-def extract_pdf_text(pdf_bytes: bytes) -> str:
-    def extract_page_text(page: Any) -> str:
-        words = page.extract_words(
-            x_tolerance=1.5,
-            y_tolerance=2,
-            use_text_flow=True,
-            keep_blank_chars=False,
-        )
-        if not words:
-            return page.extract_text() or ""
-
-        # top座標ごとに行グルーピングし、x座標順に並べて行文字列を再構築
-        line_map: dict[float, list[dict[str, Any]]] = {}
-        for word in words:
-            top_key = round(float(word.get("top", 0.0)), 1)
-            line_map.setdefault(top_key, []).append(word)
-
-        lines: list[str] = []
-        for top_key in sorted(line_map.keys()):
-            row_words = sorted(line_map[top_key], key=lambda w: float(w.get("x0", 0.0)))
-            parts: list[str] = []
-            prev_x1: float | None = None
-            for word in row_words:
-                x0 = float(word.get("x0", 0.0))
-                x1 = float(word.get("x1", x0))
-                text = str(word.get("text", ""))
-                if prev_x1 is not None and (x0 - prev_x1) > 6.0:
-                    parts.append(" ")
-                parts.append(text)
-                prev_x1 = x1
-            line = "".join(parts).strip()
-            if line:
-                lines.append(line)
-        return "\n".join(lines)
-
-    pages: list[str] = []
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        for page in pdf.pages:
-            pages.append(extract_page_text(page))
-    return "\n\n".join(pages).strip()
 
 
 def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def normalize_text_for_parse(text: str) -> str:
+    normalized = text.translate(str.maketrans("０１２３４５６７８９，．", "0123456789,."))
+    return normalized.replace("\u3000", " ").strip()
+
+
+def pick_item_label_only(text: str) -> str:
+    compact = re.sub(r"\s+", " ", text.strip())
+    if not compact:
+        return ""
+    return compact.split(" ")[0].strip()
+
+
+def has_number(text: str) -> bool:
+    return bool(re.search(r"\d", text))
+
+
+def is_zero_like(text: str) -> bool:
+    compact = re.sub(r"[\s,.\-]", "", text)
+    return compact != "" and set(compact) == {"0"}
+
+
+def pick_first_numeric_token(text: str) -> str:
+    normalized = normalize_text_for_parse(text)
+    match = re.search(r"\d[\d,]*(?:\.\d+)?", normalized)
+    if match:
+        return match.group(0)
+    return ""
+
+
+def parse_decimal_from_text(text: str) -> Decimal | None:
+    token = pick_first_numeric_token(text)
+    if not token:
+        return None
+    try:
+        return Decimal(token.replace(",", ""))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def normalize_row_values(row: list[str]) -> list[str]:
+    if not row:
+        return row
+    if not has_number(" ".join(row[1:])):
+        return row
+    normalized = [row[0].strip()]
+    for cell in row[1:]:
+        token = pick_first_numeric_token(cell)
+        normalized.append(token if token else cell.strip())
+    return normalized
+
+
+def get_pymupdf_page_words(pdf_bytes: bytes, page_idx: int) -> list[dict[str, Any]]:
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        if page_idx < 0 or page_idx >= len(doc):
+            return []
+        page = doc[page_idx]
+        words = page.get_text("words")
+    out: list[dict[str, Any]] = []
+    for w in words:
+        out.append(
+            {
+                "x0": float(w[0]),
+                "top": float(w[1]),
+                "x1": float(w[2]),
+                "bottom": float(w[3]),
+                "text": str(w[4]).strip(),
+            }
+        )
+    return out
+
+
+def cluster_words_to_lines(words: list[dict[str, Any]], tolerance: float = 2.0) -> list[str]:
+    sorted_words = sorted(words, key=lambda w: (float(w.get("top", 0.0)), float(w.get("x0", 0.0))))
+    lines: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    current_top: float | None = None
+    for word in sorted_words:
+        top = float(word.get("top", 0.0))
+        if current_top is None or abs(top - current_top) <= tolerance:
+            current.append(word)
+            current_top = top if current_top is None else (current_top + top) / 2
+        else:
+            lines.append(current)
+            current = [word]
+            current_top = top
+    if current:
+        lines.append(current)
+
+    out: list[str] = []
+    for line_words in lines:
+        parts = [str(w.get("text", "")).strip() for w in sorted(line_words, key=lambda w: float(w.get("x0", 0.0)))]
+        text = "".join(p for p in parts if p).strip()
+        if text and not is_zero_like(text):
+            out.append(text)
+    return out
+
+
+def _row_bbox_from_pdfplumber_row(row: Any) -> tuple[float, float, float, float] | None:
+    bbox = getattr(row, "bbox", None)
+    if bbox and len(bbox) == 4:
+        return (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+    cells = getattr(row, "cells", None)
+    if not cells:
+        return None
+    valid = [c for c in cells if c is not None and len(c) == 4]
+    if not valid:
+        return None
+    return (
+        min(float(c[0]) for c in valid),
+        min(float(c[1]) for c in valid),
+        max(float(c[2]) for c in valid),
+        max(float(c[3]) for c in valid),
+    )
+
+
+def _column_xranges_from_table(table: Any, ncols: int) -> list[tuple[float, float] | None]:
+    rows = getattr(table, "rows", None) or []
+    ranges: list[list[tuple[float, float]]] = [[] for _ in range(ncols)]
+    for row in rows:
+        cells = getattr(row, "cells", None) or []
+        for cidx in range(min(ncols, len(cells))):
+            cell = cells[cidx]
+            if cell is None or len(cell) != 4:
+                continue
+            ranges[cidx].append((float(cell[0]), float(cell[2])))
+    out: list[tuple[float, float] | None] = []
+    for col_ranges in ranges:
+        if not col_ranges:
+            out.append(None)
+        else:
+            out.append((min(a for a, _ in col_ranges), max(b for _, b in col_ranges)))
+    return out
+
+
+def _join_words_in_bbox(words: list[dict[str, Any]], bbox: tuple[float, float, float, float]) -> str:
+    x0, y0, x1, y1 = bbox
+    picked: list[dict[str, Any]] = []
+    for w in words:
+        if not w["text"]:
+            continue
+        if w["x1"] < x0 or w["x0"] > x1:
+            continue
+        if w["bottom"] < y0 or w["top"] > y1:
+            continue
+        picked.append(w)
+    if not picked:
+        return ""
+    picked = sorted(picked, key=lambda w: (w["top"], w["x0"]))
+    return " ".join(w["text"] for w in picked).strip()
+
+
+def fill_missing_cells_from_pymupdf(table: Any, data: list[list[Any]], page_words: list[dict[str, Any]]) -> list[list[str]]:
+    rows = [[str(c).replace("\n", " ").strip() if c is not None else "" for c in row] for row in data]
+    if not rows:
+        return rows
+    ncols = max(len(r) for r in rows)
+    col_ranges = _column_xranges_from_table(table, ncols)
+    table_rows = getattr(table, "rows", None) or []
+    for ridx, row in enumerate(rows):
+        if ridx >= len(table_rows):
+            continue
+        row_bbox = _row_bbox_from_pdfplumber_row(table_rows[ridx])
+        if row_bbox is None:
+            continue
+        _, ry0, _, ry1 = row_bbox
+        for cidx in range(len(row)):
+            if row[cidx]:
+                continue
+            col = col_ranges[cidx] if cidx < len(col_ranges) else None
+            if col is None:
+                continue
+            cx0, cx1 = col
+            row[cidx] = _join_words_in_bbox(page_words, (cx0 - 0.8, ry0 - 1.5, cx1 + 0.8, ry1 + 1.5))
+    return rows
+
+
+def _first_col_xrange_from_table(table: Any) -> tuple[float, float] | None:
+    rows = getattr(table, "rows", None) or []
+    xs: list[tuple[float, float]] = []
+    for row in rows:
+        cells = getattr(row, "cells", None) or []
+        if not cells:
+            continue
+        c0 = cells[0]
+        if c0 is not None and len(c0) == 4:
+            xs.append((float(c0[0]), float(c0[2])))
+    if not xs:
+        return None
+    return (min(a for a, _ in xs), max(b for _, b in xs))
+
+
+def extract_first_col_by_row_pymupdf(page_words: list[dict[str, Any]], table: Any) -> list[str]:
+    x0, top, x1, bottom = table.bbox
+    x_range = _first_col_xrange_from_table(table)
+    if x_range is None:
+        x_range = (x0, x0 + (x1 - x0) * 0.35)
+    col_x0, col_x1 = x_range
+
+    left_words: list[dict[str, Any]] = []
+    for w in page_words:
+        if w["x1"] < col_x0 or w["x0"] > col_x1:
+            continue
+        if w["bottom"] < top or w["top"] > bottom:
+            continue
+        left_words.append(w)
+
+    rows = getattr(table, "rows", None) or []
+    out: list[str] = []
+    for row in rows:
+        rb = _row_bbox_from_pdfplumber_row(row)
+        if rb is None:
+            out.append("")
+            continue
+        _, ry0, _, ry1 = rb
+        row_words = [w for w in left_words if not (w["bottom"] < ry0 - 1.2 or w["top"] > ry1 + 1.2)]
+        lines = cluster_words_to_lines(row_words, tolerance=1.8)
+        picked = ""
+        for line in lines:
+            s = line.strip()
+            if not s or is_zero_like(s) or has_number(s):
+                continue
+            picked = pick_item_label_only(s)
+            break
+        out.append(picked)
+    return out
+
+
+def fill_first_col_by_row_values(data: list[list[str]], first_col_values: list[str]) -> list[list[str]]:
+    rows = [row[:] for row in data]
+    for ridx, row in enumerate(rows):
+        if ridx >= len(first_col_values) or not row:
+            continue
+        candidate = pick_item_label_only(first_col_values[ridx])
+        if candidate:
+            row[0] = candidate
+    return rows
+
+
+def extract_raw_text_basic(pdf_bytes: bytes) -> str:
+    pages: list[str] = []
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for index, page in enumerate(pdf.pages, start=1):
+            pages.append(f"=== PAGE {index} ===\n{page.extract_text() or ''}")
+    return "\n\n".join(pages).strip()
+
+
+def canonicalize_caption(text: str) -> str:
+    t = normalize_text_for_parse(text)
+    t = re.sub(r"[\s/／()（）\[\]【】]+", "", t)
+    return t
+
+
+def extract_market_rows_from_pdf(pdf_bytes: bytes) -> tuple[list[dict[str, Any]], str]:
+    rows_out: list[dict[str, Any]] = []
+    line_no = 0
+    caption_signature = ""
+
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for page_idx, page in enumerate(pdf.pages):
+            tables = page.find_tables()
+            if not tables:
+                continue
+            page_words = get_pymupdf_page_words(pdf_bytes, page_idx)
+            for table in tables:
+                extracted = table.extract() or []
+                if not extracted:
+                    continue
+                merged = fill_missing_cells_from_pymupdf(table, extracted, page_words)
+                first_col = extract_first_col_by_row_pymupdf(page_words, table)
+                merged = fill_first_col_by_row_values(merged, first_col)
+
+                for ridx, row in enumerate(merged):
+                    normalized_row = normalize_row_values(row)
+                    if ridx == 0 and not caption_signature:
+                        caption_signature = "|".join(canonicalize_caption(c) for c in normalized_row[:5] if c.strip())
+
+                    if len(normalized_row) < 5:
+                        continue
+
+                    item_name = pick_item_label_only(normalized_row[0])
+                    if not item_name or not ITEM_NAME_PATTERN.search(item_name):
+                        continue
+
+                    quantity = parse_decimal_from_text(normalized_row[1])
+                    high_price = parse_decimal_from_text(normalized_row[2])
+                    avg_price = parse_decimal_from_text(normalized_row[3])
+                    low_price = parse_decimal_from_text(normalized_row[4])
+                    if any(v is None for v in (quantity, high_price, avg_price, low_price)):
+                        continue
+                    if high_price == 0 and avg_price == 0 and low_price == 0 and quantity == 0:
+                        continue
+
+                    line_no += 1
+                    rows_out.append(
+                        {
+                            "line_no": line_no,
+                            "raw_line": "\t".join(normalized_row[:5]),
+                            "item_name": item_name,
+                            "quantity": quantity,
+                            "high_price": high_price,
+                            "avg_price": avg_price,
+                            "low_price": low_price,
+                            "parse_confidence": 95,
+                        }
+                    )
+
+    return rows_out, caption_signature
 
 
 def ensure_schema(conn: psycopg.Connection) -> None:
@@ -148,10 +398,23 @@ def ensure_schema(conn: psycopg.Connection) -> None:
               pdf_sha256 text not null,
               pdf_size_bytes integer not null,
               raw_text text,
+              caption_signature text,
+              format_alert boolean not null default false,
               parse_status text not null default 'fetched',
               error_message text,
               fetched_at timestamptz not null default now(),
               created_at timestamptz not null default now(),
+              updated_at timestamptz not null default now()
+            );
+            """
+        )
+        cur.execute("alter table source_files add column if not exists caption_signature text;")
+        cur.execute("alter table source_files add column if not exists format_alert boolean not null default false;")
+        cur.execute(
+            """
+            create table if not exists ingest_metadata (
+              key text primary key,
+              value text not null,
               updated_at timestamptz not null default now()
             );
             """
@@ -216,6 +479,8 @@ def ensure_schema(conn: psycopg.Connection) -> None:
               pdf_sha256,
               pdf_size_bytes,
               raw_text,
+              caption_signature,
+              format_alert,
               parse_status,
               error_message,
               fetched_at,
@@ -230,6 +495,27 @@ def ensure_schema(conn: psycopg.Connection) -> None:
     conn.commit()
 
 
+def detect_caption_change(conn: psycopg.Connection, current_signature: str) -> tuple[bool, str | None]:
+    if not current_signature:
+        return False, None
+    previous: str | None = None
+    with conn.cursor() as cur:
+        cur.execute("select value from ingest_metadata where key = 'table_caption_last_seen';")
+        row = cur.fetchone()
+        if row:
+            previous = str(row[0])
+        cur.execute(
+            """
+            insert into ingest_metadata (key, value, updated_at)
+            values ('table_caption_last_seen', %s, now())
+            on conflict (key) do update set value = excluded.value, updated_at = now();
+            """,
+            (current_signature,),
+        )
+    conn.commit()
+    return bool(previous and previous != current_signature), previous
+
+
 def upsert_source_file(
     conn: psycopg.Connection,
     sale_date: date,
@@ -237,6 +523,8 @@ def upsert_source_file(
     pdf_sha256: str,
     pdf_size_bytes: int,
     raw_text: str | None,
+    caption_signature: str | None,
+    format_alert: bool,
     parse_status: str,
     error_message: str | None,
 ) -> int:
@@ -244,14 +532,16 @@ def upsert_source_file(
         cur.execute(
             """
             insert into source_files (
-              sale_date, source_url, pdf_sha256, pdf_size_bytes,
-              raw_text, parse_status, error_message, fetched_at
-            ) values (%s, %s, %s, %s, %s, %s, %s, now())
+              sale_date, source_url, pdf_sha256, pdf_size_bytes, raw_text,
+              caption_signature, format_alert, parse_status, error_message, fetched_at
+            ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
             on conflict (source_url) do update set
               sale_date = excluded.sale_date,
               pdf_sha256 = excluded.pdf_sha256,
               pdf_size_bytes = excluded.pdf_size_bytes,
               raw_text = excluded.raw_text,
+              caption_signature = excluded.caption_signature,
+              format_alert = excluded.format_alert,
               parse_status = excluded.parse_status,
               error_message = excluded.error_message,
               fetched_at = now()
@@ -263,6 +553,8 @@ def upsert_source_file(
                 pdf_sha256,
                 pdf_size_bytes,
                 raw_text,
+                caption_signature,
+                format_alert,
                 parse_status,
                 error_message,
             ),
@@ -274,180 +566,7 @@ def upsert_source_file(
     return int(row[0])
 
 
-def normalize_text_for_parse(text: str) -> str:
-    normalized = text.translate(str.maketrans("０１２３４５６７８９，", "0123456789,"))
-    return normalized.replace("\u3000", " ")
-
-
-def parse_decimal(token: str) -> Decimal | None:
-    try:
-        return Decimal(token.replace(",", ""))
-    except (InvalidOperation, ValueError):
-        return None
-
-
-def is_valid_item_name(value: str) -> bool:
-    return bool(ITEM_NAME_PATTERN.search(value))
-
-
-def parse_market_rows(raw_text: str) -> list[dict]:
-    rows: list[dict] = []
-    for line_no, raw_line in enumerate(raw_text.splitlines(), start=1):
-        line = normalize_text_for_parse(raw_line).strip()
-        if not line:
-            continue
-
-        number_matches = list(NUMBER_PATTERN.finditer(line))
-        if len(number_matches) < 4:
-            continue
-
-        parsed_numbers: list[Decimal] = []
-        for m in number_matches:
-            value = parse_decimal(m.group(0))
-            if value is not None:
-                parsed_numbers.append(value)
-        if len(parsed_numbers) < 4:
-            continue
-
-        first_num_start = number_matches[0].start()
-        item_name = line[:first_num_start].strip(" :")
-        if not item_name or not is_valid_item_name(item_name):
-            continue
-
-        high_price, avg_price, low_price, quantity = parsed_numbers[-4:]
-        if high_price == 0 and avg_price == 0 and low_price == 0 and quantity == 0:
-            continue
-        rows.append(
-            {
-                "line_no": line_no,
-                "raw_line": raw_line.strip(),
-                "item_name": item_name,
-                "quantity": quantity,
-                "high_price": high_price,
-                "avg_price": avg_price,
-                "low_price": low_price,
-                "parse_confidence": 60,
-            }
-        )
-    return rows
-
-
-def _is_numeric_token(text: str) -> bool:
-    return bool(NUMBER_TOKEN_PATTERN.match(normalize_text_for_parse(text)))
-
-
-def parse_market_rows_from_pdf(pdf_bytes: bytes) -> list[dict]:
-    rows: list[dict] = []
-    global_line_no = 0
-
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        for page in pdf.pages:
-            words = page.extract_words(
-                x_tolerance=1.5,
-                y_tolerance=2.5,
-                use_text_flow=True,
-                keep_blank_chars=False,
-            )
-            if not words:
-                continue
-
-            # top座標を近い値でクラスタリングして、実質的な行を復元
-            sorted_words = sorted(words, key=lambda w: (float(w.get("top", 0.0)), float(w.get("x0", 0.0))))
-            lines: list[list[dict[str, Any]]] = []
-            current: list[dict[str, Any]] = []
-            current_top: float | None = None
-            tolerance = 2.0
-
-            for word in sorted_words:
-                top = float(word.get("top", 0.0))
-                if current_top is None or abs(top - current_top) <= tolerance:
-                    current.append(word)
-                    current_top = top if current_top is None else (current_top + top) / 2
-                else:
-                    lines.append(current)
-                    current = [word]
-                    current_top = top
-            if current:
-                lines.append(current)
-
-            for line_words in lines:
-                global_line_no += 1
-                line_words = sorted(line_words, key=lambda w: float(w.get("x0", 0.0)))
-                tokens: list[dict[str, Any]] = []
-                for word in line_words:
-                    text = str(word.get("text", "")).strip()
-                    if not text:
-                        continue
-                    tokens.append(
-                        {
-                            "text": text,
-                            "norm": normalize_text_for_parse(text),
-                            "x0": float(word.get("x0", 0.0)),
-                        }
-                    )
-                if len(tokens) < 2:
-                    continue
-
-                numeric_indexes = [i for i, t in enumerate(tokens) if _is_numeric_token(t["norm"])]
-                if len(numeric_indexes) < 4:
-                    continue
-
-                # 右側4列を価格/数量とみなす
-                picked = numeric_indexes[-4:]
-                parsed_values: list[Decimal] = []
-                for idx in picked:
-                    value = parse_decimal(tokens[idx]["norm"])
-                    if value is None:
-                        parsed_values = []
-                        break
-                    parsed_values.append(value)
-                if len(parsed_values) != 4:
-                    continue
-
-                first_value_index = picked[0]
-                name_parts = [t["text"] for t in tokens[:first_value_index] if t["text"]]
-                item_name = "".join(name_parts).strip(" :")
-                if not item_name or not is_valid_item_name(item_name):
-                    continue
-
-                raw_line = " ".join(t["text"] for t in tokens).strip()
-                high_price, avg_price, low_price, quantity = parsed_values
-                if high_price == 0 and avg_price == 0 and low_price == 0 and quantity == 0:
-                    continue
-                rows.append(
-                    {
-                        "line_no": global_line_no,
-                        "raw_line": raw_line,
-                        "item_name": item_name,
-                        "quantity": quantity,
-                        "high_price": high_price,
-                        "avg_price": avg_price,
-                        "low_price": low_price,
-                        "parse_confidence": 80,
-                    }
-                )
-
-    return rows
-
-
-def score_rows(rows: list[dict]) -> tuple[int, int, int]:
-    non_zero_rows = 0
-    valid_name_rows = 0
-    for row in rows:
-        if is_valid_item_name(str(row.get("item_name", ""))):
-            valid_name_rows += 1
-        numbers = [
-            row.get("high_price", Decimal(0)),
-            row.get("avg_price", Decimal(0)),
-            row.get("low_price", Decimal(0)),
-            row.get("quantity", Decimal(0)),
-        ]
-        if any(n is not None and n != 0 for n in numbers):
-            non_zero_rows += 1
-    return (non_zero_rows, valid_name_rows, len(rows))
-
-
-def replace_market_rows(conn: psycopg.Connection, source_file_id: int, rows: list[dict]) -> None:
+def replace_market_rows(conn: psycopg.Connection, source_file_id: int, rows: list[dict[str, Any]]) -> None:
     with conn.cursor() as cur:
         cur.execute("delete from market_rows where source_file_id = %s;", (source_file_id,))
         for row in rows:
@@ -480,28 +599,30 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
             response.raise_for_status()
             pdf_bytes = response.content
             digest = sha256_hex(pdf_bytes)
-            text_coord = extract_pdf_text(pdf_bytes)
-            text_basic = extract_pdf_text_basic(pdf_bytes)
+            raw_text = extract_raw_text_basic(pdf_bytes)
+            parsed_rows, caption_signature = extract_market_rows_from_pdf(pdf_bytes)
+            format_alert, previous_signature = detect_caption_change(conn, caption_signature)
 
-            candidate_rows: list[tuple[str, list[dict], str]] = [
-                ("coord_words", parse_market_rows_from_pdf(pdf_bytes), text_coord),
-                ("coord_text", parse_market_rows(text_coord), text_coord),
-                ("basic_text", parse_market_rows(text_basic), text_basic),
-            ]
-
-            best_name, parsed_rows, text = max(candidate_rows, key=lambda x: score_rows(x[1]))
             source_file_id = upsert_source_file(
                 conn=conn,
                 sale_date=sale_date,
                 source_url=source_url,
                 pdf_sha256=digest,
                 pdf_size_bytes=len(pdf_bytes),
-                raw_text=text,
+                raw_text=raw_text,
+                caption_signature=caption_signature,
+                format_alert=format_alert,
                 parse_status="fetched",
                 error_message=None,
             )
             replace_market_rows(conn, source_file_id, parsed_rows)
-            print(f"[OK] {sale_date} {source_url} rows={len(parsed_rows)} method={best_name}")
+
+            if format_alert:
+                print(
+                    "::warning title=CaptionChanged::"
+                    f"{sale_date} caption changed. prev={previous_signature} current={caption_signature}"
+                )
+            print(f"[OK] {sale_date} {source_url} rows={len(parsed_rows)}")
         except Exception as exc:  # noqa: BLE001
             upsert_source_file(
                 conn=conn,
@@ -510,6 +631,8 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
                 pdf_sha256="",
                 pdf_size_bytes=0,
                 raw_text=None,
+                caption_signature=None,
+                format_alert=False,
                 parse_status="failed",
                 error_message=str(exc)[:1000],
             )
@@ -524,11 +647,7 @@ def main() -> None:
     with psycopg.connect(db_url) as conn:
         ensure_schema(conn)
         session = requests.Session()
-        session.headers.update(
-            {
-                "User-Agent": "agri-db-bot/1.0 (+https://github.com/)",
-            }
-        )
+        session.headers.update({"User-Agent": "agri-db-bot/1.0 (+https://github.com/)"})
         links = fetch_pdf_links(session)
         print(f"[INFO] links from listing page: {len(links)}")
         if not links:
@@ -541,3 +660,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
