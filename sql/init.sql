@@ -5,10 +5,21 @@ create table if not exists source_files (
   pdf_sha256 text not null,
   pdf_size_bytes integer not null,
   raw_text text,
+  caption_signature text,
+  format_alert boolean not null default false,
   parse_status text not null default 'fetched',
   error_message text,
   fetched_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table source_files add column if not exists caption_signature text;
+alter table source_files add column if not exists format_alert boolean not null default false;
+
+create table if not exists ingest_metadata (
+  key text primary key,
+  value text not null,
   updated_at timestamptz not null default now()
 );
 
@@ -55,6 +66,8 @@ select
   pdf_sha256,
   pdf_size_bytes,
   raw_text,
+  caption_signature,
+  format_alert,
   parse_status,
   error_message,
   fetched_at,
