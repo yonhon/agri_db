@@ -78,3 +78,20 @@ select
   created_at at time zone 'Asia/Tokyo' as created_at_jst,
   updated_at at time zone 'Asia/Tokyo' as updated_at_jst
 from source_files;
+
+drop view if exists market_rows_jst;
+create or replace view market_rows_jst as
+select
+  id,
+  source_file_id,
+  line_no,
+  raw_line,
+  item_name,
+  quantity,
+  high_price,
+  avg_price,
+  low_price,
+  parse_confidence,
+  created_at,
+  created_at at time zone 'Asia/Tokyo' as created_at_jst
+from market_rows;
