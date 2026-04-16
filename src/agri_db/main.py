@@ -5,7 +5,7 @@ import os
 import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Iterable
+from typing import Any, Iterable
 from urllib.parse import urljoin
 
 import pdfplumber
@@ -82,10 +82,44 @@ def probe_recent_pdf_links(session: requests.Session, days_back: int = 45) -> li
 
 
 def extract_pdf_text(pdf_bytes: bytes) -> str:
+    def extract_page_text(page: Any) -> str:
+        words = page.extract_words(
+            x_tolerance=1.5,
+            y_tolerance=2,
+            use_text_flow=True,
+            keep_blank_chars=False,
+        )
+        if not words:
+            return page.extract_text() or ""
+
+        # top座標ごとに行グルーピングし、x座標順に並べて行文字列を再構築
+        line_map: dict[float, list[dict[str, Any]]] = {}
+        for word in words:
+            top_key = round(float(word.get("top", 0.0)), 1)
+            line_map.setdefault(top_key, []).append(word)
+
+        lines: list[str] = []
+        for top_key in sorted(line_map.keys()):
+            row_words = sorted(line_map[top_key], key=lambda w: float(w.get("x0", 0.0)))
+            parts: list[str] = []
+            prev_x1: float | None = None
+            for word in row_words:
+                x0 = float(word.get("x0", 0.0))
+                x1 = float(word.get("x1", x0))
+                text = str(word.get("text", ""))
+                if prev_x1 is not None and (x0 - prev_x1) > 6.0:
+                    parts.append(" ")
+                parts.append(text)
+                prev_x1 = x1
+            line = "".join(parts).strip()
+            if line:
+                lines.append(line)
+        return "\n".join(lines)
+
     pages: list[str] = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
-            pages.append(page.extract_text() or "")
+            pages.append(extract_page_text(page))
     return "\n\n".join(pages).strip()
 
 
