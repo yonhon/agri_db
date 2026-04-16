@@ -471,6 +471,11 @@ def ensure_schema(conn: psycopg.Connection) -> None:
         )
         cur.execute(
             """
+            drop view if exists source_files_jst;
+            """
+        )
+        cur.execute(
+            """
             create or replace view source_files_jst as
             select
               id,
@@ -660,4 +665,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

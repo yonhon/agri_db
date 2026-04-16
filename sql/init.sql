@@ -58,6 +58,7 @@ create table if not exists market_rows (
 create index if not exists idx_market_rows_source_file_id
 on market_rows(source_file_id);
 
+drop view if exists source_files_jst;
 create or replace view source_files_jst as
 select
   id,
