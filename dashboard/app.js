@@ -5,6 +5,11 @@
   const kpiDateLabelEl = document.getElementById("kpiDateLabel");
   const trendItemsEl = document.getElementById("trendItems");
   const focusItemEl = document.getElementById("focusItem");
+  const corrFocusItemEl = document.getElementById("corrFocusItem");
+  const corrMetaLabelEl = document.getElementById("corrMetaLabel");
+  const corrTopPairsBodyEl = document.getElementById("corrTopPairsBody");
+  const corrBottomPairsBodyEl = document.getElementById("corrBottomPairsBody");
+  const corrFocusRankingBodyEl = document.getElementById("corrFocusRankingBody");
   const reloadBtn = document.getElementById("reloadBtn");
   const periodButtons = Array.from(document.querySelectorAll(".period-btn"));
 
@@ -14,11 +19,11 @@
     periodDays: Number(config.defaultDays) || 30,
     trendItems: [],
     focusItem: "",
+    corrFocusItem: "",
   };
 
   const trendChart = echarts.init(document.getElementById("trendChart"));
   const comboChart = echarts.init(document.getElementById("comboChart"));
-  const heatmapChart = echarts.init(document.getElementById("heatmapChart"));
 
   function setStatus(message) {
     statusEl.textContent = message;
@@ -48,6 +53,13 @@
   function fmtRate(rate) {
     const sign = rate > 0 ? "+" : "";
     return `${sign}${rate.toFixed(1)}%`;
+  }
+
+  function fmtCorr(value) {
+    if (!Number.isFinite(value)) {
+      return "-";
+    }
+    return value.toFixed(3);
   }
 
   function getLatestDate(rows) {
@@ -131,12 +143,9 @@
     const ranked = getItemCandidates(periodRows).filter((item) => items.includes(item));
     const orderedItems = [...ranked, ...items.filter((i) => !ranked.includes(i))];
 
-    trendItemsEl.innerHTML = orderedItems
-      .map((item) => `<option value="${item}">${item}</option>`)
-      .join("");
-    focusItemEl.innerHTML = orderedItems
-      .map((item) => `<option value="${item}">${item}</option>`)
-      .join("");
+    trendItemsEl.innerHTML = orderedItems.map((item) => `<option value="${item}">${item}</option>`).join("");
+    focusItemEl.innerHTML = orderedItems.map((item) => `<option value="${item}">${item}</option>`).join("");
+    corrFocusItemEl.innerHTML = orderedItems.map((item) => `<option value="${item}">${item}</option>`).join("");
 
     const defaultTrendCount = Math.min(Number(config.trendDefaultItems) || 6, orderedItems.length);
     if (!state.trendItems.length) {
@@ -155,6 +164,11 @@
       state.focusItem = orderedItems[0] || "";
     }
     focusItemEl.value = state.focusItem;
+
+    if (!state.corrFocusItem || !orderedItems.includes(state.corrFocusItem)) {
+      state.corrFocusItem = orderedItems[0] || "";
+    }
+    corrFocusItemEl.value = state.corrFocusItem;
   }
 
   function renderKpiCards(periodRows) {
@@ -213,34 +227,28 @@
       `;
     });
 
-    const cards = [...topCards, ...bottomCards];
-    kpiCardsEl.innerHTML = cards.join("");
+    kpiCardsEl.innerHTML = [...topCards, ...bottomCards].join("");
     kpiDateLabelEl.textContent = `基準日: ${latestDate}`;
   }
 
   function renderTrendChart(periodRows) {
     const dates = Array.from(new Set(periodRows.map((r) => r.sale_date))).sort();
     const itemSet = new Set(state.trendItems);
-
     const valueMap = new Map();
     periodRows.forEach((r) => {
       if (!itemSet.has(r.item_name)) {
         return;
       }
-      const key = `${r.item_name}__${r.sale_date}`;
-      valueMap.set(key, r.avg_price);
+      valueMap.set(`${r.item_name}__${r.sale_date}`, r.avg_price);
     });
 
-    const series = state.trendItems.map((item) => {
-      const data = dates.map((d) => valueMap.get(`${item}__${d}`) ?? null);
-      return {
-        name: item,
-        type: "line",
-        smooth: true,
-        showSymbol: false,
-        data,
-      };
-    });
+    const series = state.trendItems.map((item) => ({
+      name: item,
+      type: "line",
+      smooth: true,
+      showSymbol: false,
+      data: dates.map((d) => valueMap.get(`${item}__${d}`) ?? null),
+    }));
 
     trendChart.setOption(
       {
@@ -248,11 +256,7 @@
         tooltip: { trigger: "axis" },
         legend: { top: 0, type: "scroll" },
         grid: { left: 48, right: 22, top: 36, bottom: 44 },
-        xAxis: {
-          type: "category",
-          data: dates.map(formatYmd),
-          axisLabel: { color: "#516050" },
-        },
+        xAxis: { type: "category", data: dates.map(formatYmd), axisLabel: { color: "#516050" } },
         yAxis: {
           type: "value",
           axisLabel: { color: "#516050", formatter: "{value}円" },
@@ -268,8 +272,6 @@
     const itemRows = periodRows.filter((r) => r.item_name === state.focusItem);
     itemRows.sort((a, b) => a.sale_date.localeCompare(b.sale_date));
     const xData = itemRows.map((r) => formatYmd(r.sale_date));
-    const quantity = itemRows.map((r) => r.quantity);
-    const price = itemRows.map((r) => r.avg_price);
 
     comboChart.setOption(
       {
@@ -298,7 +300,7 @@
             yAxisIndex: 0,
             barMaxWidth: 18,
             itemStyle: { color: "#78b98b", borderRadius: [4, 4, 0, 0] },
-            data: quantity,
+            data: itemRows.map((r) => r.quantity),
           },
           {
             name: "平均価格",
@@ -307,7 +309,7 @@
             smooth: true,
             symbolSize: 6,
             itemStyle: { color: "#d06f3b" },
-            data: price,
+            data: itemRows.map((r) => r.avg_price),
           },
         ],
       },
@@ -315,87 +317,237 @@
     );
   }
 
-  function renderHeatmap(periodRows) {
-    const dates = Array.from(new Set(periodRows.map((r) => r.sale_date))).sort();
-    const ranking = new Map();
-    periodRows.forEach((r) => {
-      if (!ranking.has(r.item_name)) {
-        ranking.set(r.item_name, 0);
+  function median(values) {
+    if (!values.length) {
+      return 0;
+    }
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    if (sorted.length % 2 === 0) {
+      return (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+    return sorted[mid];
+  }
+
+  function quantile(values, q) {
+    if (!values.length) {
+      return 0;
+    }
+    const sorted = [...values].sort((a, b) => a - b);
+    const pos = (sorted.length - 1) * q;
+    const base = Math.floor(pos);
+    const rest = pos - base;
+    const next = sorted[base + 1];
+    return next == null ? sorted[base] : sorted[base] + rest * (next - sorted[base]);
+  }
+
+  function rankValues(values) {
+    const pairs = values.map((v, idx) => ({ v, idx }));
+    pairs.sort((a, b) => a.v - b.v);
+    const ranks = new Array(values.length).fill(0);
+    let i = 0;
+    while (i < pairs.length) {
+      let j = i + 1;
+      while (j < pairs.length && pairs[j].v === pairs[i].v) {
+        j += 1;
       }
-      ranking.set(r.item_name, ranking.get(r.item_name) + (r.quantity || 0));
+      const rank = (i + j - 1) / 2 + 1;
+      for (let k = i; k < j; k += 1) {
+        ranks[pairs[k].idx] = rank;
+      }
+      i = j;
+    }
+    return ranks;
+  }
+
+  function pearson(x, y) {
+    const n = x.length;
+    if (n < 2) {
+      return NaN;
+    }
+    const mx = x.reduce((a, b) => a + b, 0) / n;
+    const my = y.reduce((a, b) => a + b, 0) / n;
+    let num = 0;
+    let sx = 0;
+    let sy = 0;
+    for (let i = 0; i < n; i += 1) {
+      const dx = x[i] - mx;
+      const dy = y[i] - my;
+      num += dx * dy;
+      sx += dx * dx;
+      sy += dy * dy;
+    }
+    const den = Math.sqrt(sx * sy);
+    return den === 0 ? NaN : num / den;
+  }
+
+  function spearman(x, y) {
+    return pearson(rankValues(x), rankValues(y));
+  }
+
+  function computeCorrelationData(periodRows) {
+    const uniqueDates = Array.from(new Set(periodRows.map((r) => r.sale_date)));
+    const maxPossibleOverlap = Math.max(2, uniqueDates.length - 1);
+    const byItem = buildSeriesByItem(periodRows);
+    const rawReturnsByItem = new Map();
+    const dayReturns = new Map();
+
+    byItem.forEach((series, item) => {
+      const returns = [];
+      for (let i = 1; i < series.length; i += 1) {
+        const prev = series[i - 1].avg_price;
+        const curr = series[i].avg_price;
+        if (!(prev > 0) || !(curr > 0)) {
+          continue;
+        }
+        const date = series[i].sale_date;
+        const r = Math.log(curr) - Math.log(prev);
+        returns.push({ date, value: r });
+        if (!dayReturns.has(date)) {
+          dayReturns.set(date, []);
+        }
+        dayReturns.get(date).push(r);
+      }
+      if (returns.length) {
+        rawReturnsByItem.set(item, returns);
+      }
     });
-    const maxItems = Number(config.heatmapItems) || 12;
-    const items = Array.from(ranking.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, maxItems)
-      .map((entry) => entry[0]);
 
-    const xIndex = new Map(dates.map((d, i) => [d, i]));
-    const yIndex = new Map(items.map((item, i) => [item, i]));
-    const values = [];
-    const matrix = [];
+    const dayMedian = new Map();
+    dayReturns.forEach((vals, date) => {
+      dayMedian.set(date, median(vals));
+    });
 
-    periodRows.forEach((r) => {
-      if (!xIndex.has(r.sale_date) || !yIndex.has(r.item_name) || r.avg_price == null) {
+    const standardizedByItem = new Map();
+    rawReturnsByItem.forEach((series, item) => {
+      const adjusted = series.map((p) => ({ date: p.date, value: p.value - (dayMedian.get(p.date) || 0) }));
+      const arr = adjusted.map((p) => p.value);
+      if (arr.length < 4) {
         return;
       }
-      const value = r.avg_price;
-      values.push(value);
-      matrix.push([xIndex.get(r.sale_date), yIndex.get(r.item_name), value]);
+      const q01 = quantile(arr, 0.01);
+      const q99 = quantile(arr, 0.99);
+      const clipped = adjusted.map((p) => ({
+        date: p.date,
+        value: Math.max(q01, Math.min(q99, p.value)),
+      }));
+      const clippedValues = clipped.map((p) => p.value);
+      const med = median(clippedValues);
+      const mad = median(clippedValues.map((v) => Math.abs(v - med)));
+      const scale = mad > 1e-9 ? mad * 1.4826 : (Math.sqrt(clippedValues.reduce((a, v) => a + (v - med) ** 2, 0) / clippedValues.length) || 1);
+      const zMap = new Map();
+      clipped.forEach((p) => {
+        zMap.set(p.date, (p.value - med) / scale);
+      });
+      standardizedByItem.set(item, zMap);
     });
 
-    const min = values.length ? Math.min(...values) : 0;
-    const max = values.length ? Math.max(...values) : 1;
+    const items = Array.from(standardizedByItem.keys()).sort();
+    const minOverlap = Math.min(Number(config.corrMinOverlapDays) || 30, maxPossibleOverlap);
+    const pairs = [];
 
-    heatmapChart.setOption(
-      {
-        animationDuration: 350,
-        tooltip: {
-          formatter: (params) => {
-            const [dx, iy, v] = params.value;
-            return `${items[iy]}<br/>${dates[dx]}: ${fmtPrice(v)}`;
-          },
-        },
-        grid: { left: 98, right: 22, top: 20, bottom: 70 },
-        xAxis: {
-          type: "category",
-          data: dates.map(formatYmd),
-          splitArea: { show: true },
-          axisLabel: { color: "#516050", rotate: 35 },
-        },
-        yAxis: {
-          type: "category",
-          data: items,
-          splitArea: { show: true },
-          axisLabel: { color: "#516050" },
-        },
-        visualMap: {
-          min,
-          max,
-          calculable: true,
-          orient: "horizontal",
-          left: "center",
-          bottom: 8,
-          inRange: {
-            color: ["#e6f3ed", "#99d0b6", "#3f9b70", "#2c5f48"],
-          },
-        },
-        series: [
-          {
-            type: "heatmap",
-            data: matrix,
-            label: { show: false },
-            emphasis: {
-              itemStyle: {
-                shadowBlur: 6,
-                shadowColor: "rgba(0, 0, 0, 0.25)",
-              },
-            },
-          },
-        ],
-      },
-      true
-    );
+    for (let i = 0; i < items.length; i += 1) {
+      for (let j = i + 1; j < items.length; j += 1) {
+        const a = items[i];
+        const b = items[j];
+        const mapA = standardizedByItem.get(a);
+        const mapB = standardizedByItem.get(b);
+        const x = [];
+        const y = [];
+        mapA.forEach((va, date) => {
+          if (mapB.has(date)) {
+            x.push(va);
+            y.push(mapB.get(date));
+          }
+        });
+        if (x.length < minOverlap) {
+          continue;
+        }
+        const p = pearson(x, y);
+        const s = spearman(x, y);
+        if (!Number.isFinite(p) || !Number.isFinite(s)) {
+          continue;
+        }
+        pairs.push({
+          itemA: a,
+          itemB: b,
+          pearson: p,
+          spearman: s,
+          overlap: x.length,
+        });
+      }
+    }
+    return { items, pairs, minOverlap };
+  }
+
+  function renderPairTable(targetEl, rows, emptyText) {
+    if (!rows.length) {
+      targetEl.innerHTML = `<tr><td colspan="5">${emptyText}</td></tr>`;
+      return;
+    }
+    targetEl.innerHTML = rows
+      .map((row, idx) => {
+        const cls = row.pearson >= 0 ? "pos" : "neg";
+        return `
+          <tr>
+            <td class="rank">${idx + 1}</td>
+            <td>${row.itemA} × ${row.itemB}</td>
+            <td class="corr ${cls}">${fmtCorr(row.pearson)}</td>
+            <td>${fmtCorr(row.spearman)}</td>
+            <td>${row.overlap}</td>
+          </tr>
+        `;
+      })
+      .join("");
+  }
+
+  function renderFocusRanking(corrData) {
+    const focus = state.corrFocusItem;
+    if (!focus) {
+      corrFocusRankingBodyEl.innerHTML = '<tr><td colspan="5">品目を選択してください。</td></tr>';
+      return;
+    }
+    const related = corrData.pairs
+      .filter((p) => p.itemA === focus || p.itemB === focus)
+      .map((p) => ({
+        other: p.itemA === focus ? p.itemB : p.itemA,
+        pearson: p.pearson,
+        spearman: p.spearman,
+        overlap: p.overlap,
+      }))
+      .sort((a, b) => Math.abs(b.pearson) - Math.abs(a.pearson))
+      .slice(0, 20);
+
+    if (!related.length) {
+      corrFocusRankingBodyEl.innerHTML = '<tr><td colspan="5">十分な共通日数のペアがありません。</td></tr>';
+      return;
+    }
+    corrFocusRankingBodyEl.innerHTML = related
+      .map((r, idx) => {
+        const cls = r.pearson >= 0 ? "pos" : "neg";
+        return `
+          <tr>
+            <td class="rank">${idx + 1}</td>
+            <td>${r.other}</td>
+            <td class="corr ${cls}">${fmtCorr(r.pearson)}</td>
+            <td>${fmtCorr(r.spearman)}</td>
+            <td>${r.overlap}</td>
+          </tr>
+        `;
+      })
+      .join("");
+  }
+
+  function renderCorrelationTables(periodRows) {
+    const corrData = computeCorrelationData(periodRows);
+    const top = [...corrData.pairs].sort((a, b) => b.pearson - a.pearson).slice(0, 20);
+    const bottom = [...corrData.pairs].sort((a, b) => a.pearson - b.pearson).slice(0, 20);
+
+    renderPairTable(corrTopPairsBodyEl, top, "表示可能な相関ペアがありません。");
+    renderPairTable(corrBottomPairsBodyEl, bottom, "表示可能な相関ペアがありません。");
+    renderFocusRanking(corrData);
+
+    corrMetaLabelEl.textContent = `期間: 直近 ${state.periodDays} 日 | 最低共通日数: ${corrData.minOverlap} 日 | ペア数: ${corrData.pairs.length}`;
   }
 
   function renderAll() {
@@ -404,7 +556,7 @@
     renderKpiCards(periodRows);
     renderTrendChart(periodRows);
     renderComboChart(periodRows);
-    renderHeatmap(periodRows);
+    renderCorrelationTables(periodRows);
     setStatus(`表示期間: 直近 ${state.periodDays} 日 | データ件数: ${periodRows.length}`);
   }
 
@@ -438,6 +590,11 @@
       renderAll();
     });
 
+    corrFocusItemEl.addEventListener("change", () => {
+      state.corrFocusItem = corrFocusItemEl.value;
+      renderAll();
+    });
+
     reloadBtn.addEventListener("click", () => {
       window.location.reload();
     });
@@ -445,7 +602,6 @@
     window.addEventListener("resize", () => {
       trendChart.resize();
       comboChart.resize();
-      heatmapChart.resize();
     });
   }
 
