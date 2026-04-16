@@ -83,3 +83,50 @@ GitHubリポジトリ > Settings > Secrets and variables > Actions > New reposit
   - GitHub の標準通知（失敗通知メール/通知設定）で検知可能
 
 PDFレイアウトの差異により誤抽出が混ざる可能性があるため、`raw_line` を見ながらルール改善する運用を想定しています。
+
+## 9. ダッシュボード（ECharts）を表示する
+
+`dashboard/` に1画面ダッシュボードを追加しています。
+
+- 上段: KPIカード（本日の平均価格変化率の上位下位各3品目、前日比）
+- 中段左: 品目別価格推移
+- 中段右: 入荷量×価格（2軸）
+- 下段: 品目比較ヒートマップ
+
+### 9-1. Supabaseにダッシュボード用ビューを作成
+
+- `sql/init.sql` を再実行する  
+  または `python -m src.agri_db.main` を1回実行（`ensure_schema`が同じビューを作成）
+
+作成されるビュー:
+
+- `market_daily_item_stats`
+  - `sale_date`
+  - `item_name`
+  - `quantity`
+  - `high_price`
+  - `avg_price`
+  - `low_price`
+
+### 9-2. anonでビューを読めるようにする
+
+Supabase SQL Editorで以下を実行:
+
+```sql
+grant select on table market_daily_item_stats to anon, authenticated;
+```
+
+### 9-3. フロント設定
+
+`dashboard/config.js` の値を更新:
+
+- `supabaseUrl`: `https://<project-ref>.supabase.co`
+- `supabaseAnonKey`: Supabaseの anon public key
+
+### 9-4. GitHub Pagesで公開
+
+`.github/workflows/deploy_dashboard.yml` を追加済みです。
+
+1. GitHubの `Settings > Pages` で Build and deployment を `GitHub Actions` に設定
+2. `main` へpush
+3. Actions の `Deploy Dashboard (GitHub Pages)` 完了後、Pages URLで表示

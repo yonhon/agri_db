@@ -58,6 +58,9 @@ create table if not exists market_rows (
 create index if not exists idx_market_rows_source_file_id
 on market_rows(source_file_id);
 
+create index if not exists idx_market_rows_item_name
+on market_rows(item_name);
+
 drop view if exists source_files_jst;
 create or replace view source_files_jst as
 select
@@ -95,3 +98,19 @@ select
   created_at,
   created_at at time zone 'Asia/Tokyo' as created_at_jst
 from market_rows;
+
+drop view if exists market_daily_item_stats;
+create or replace view market_daily_item_stats as
+select
+  sf.sale_date,
+  mr.item_name,
+  sum(mr.quantity)::numeric as quantity,
+  avg(mr.high_price)::numeric as high_price,
+  avg(mr.avg_price)::numeric as avg_price,
+  avg(mr.low_price)::numeric as low_price
+from market_rows mr
+join source_files sf on sf.id = mr.source_file_id
+where sf.parse_status = 'fetched'
+  and mr.item_name is not null
+  and mr.item_name <> ''
+group by sf.sale_date, mr.item_name;
