@@ -64,5 +64,16 @@ GitHubリポジトリ > Settings > Secrets and variables > Actions > New reposit
 - PDFメタ情報（URL、日付、サイズ、ハッシュ）
 - PDFから抽出した全文テキスト（`raw_text`）
 - 取得失敗時のエラー（`parse_status`, `error_message`）
+- 行単位の構造化データ（`market_rows`）
+  - `item_name`
+  - `high_price`, `avg_price`, `low_price`, `quantity`
+  - `raw_line`（元行を保持）
+  - `parse_confidence`（暫定的な抽出信頼度）
 
-品目別の構造化パースは、`raw_text` を元に次のステップで追加できます。
+## 8. 構造化抽出の現仕様
+
+- `raw_text` を行ごとに解析
+- 「数値が4つ以上ある行」を対象
+- 行中の末尾4数値を `high_price / avg_price / low_price / quantity` として格納
+
+PDFレイアウトの差異により誤抽出が混ざる可能性があるため、`raw_line` を見ながらルール改善する運用を想定しています。

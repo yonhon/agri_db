@@ -29,6 +29,24 @@ create trigger trg_source_files_updated_at
   for each row
   execute function touch_updated_at_source_files();
 
+create table if not exists market_rows (
+  id bigserial primary key,
+  source_file_id bigint not null references source_files(id) on delete cascade,
+  line_no integer not null,
+  raw_line text not null,
+  item_name text,
+  quantity numeric,
+  high_price numeric,
+  avg_price numeric,
+  low_price numeric,
+  parse_confidence smallint not null default 0,
+  created_at timestamptz not null default now(),
+  unique(source_file_id, line_no)
+);
+
+create index if not exists idx_market_rows_source_file_id
+on market_rows(source_file_id);
+
 create or replace view source_files_jst as
 select
   id,
