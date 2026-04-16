@@ -4,6 +4,7 @@ import io
 import os
 import re
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Iterable
 from urllib.parse import urljoin
 
@@ -16,6 +17,7 @@ BASE_URL = "https://www.oki-kyoudou.jp/Shikyo/shikyo.php"
 PDF_URL_TEMPLATE = "https://www.oki-kyoudou.jp/Shikyo/PDF/HP%E5%B8%82%E6%B3%81{yyyymmdd}.pdf"
 DATE_PATTERN = re.compile(r"(20\d{6})")
 PDF_URL_PATTERN = re.compile(r"""["']([^"'<>\\s]+\.pdf)["']""", re.IGNORECASE)
+NUMBER_PATTERN = re.compile(r"\d[\d,]*")
 
 
 def fetch_pdf_links(session: requests.Session) -> list[tuple[str, date]]:
@@ -138,6 +140,30 @@ def ensure_schema(conn: psycopg.Connection) -> None:
         )
         cur.execute(
             """
+            create table if not exists market_rows (
+              id bigserial primary key,
+              source_file_id bigint not null references source_files(id) on delete cascade,
+              line_no integer not null,
+              raw_line text not null,
+              item_name text,
+              quantity numeric,
+              high_price numeric,
+              avg_price numeric,
+              low_price numeric,
+              parse_confidence smallint not null default 0,
+              created_at timestamptz not null default now(),
+              unique(source_file_id, line_no)
+            );
+            """
+        )
+        cur.execute(
+            """
+            create index if not exists idx_market_rows_source_file_id
+            on market_rows(source_file_id);
+            """
+        )
+        cur.execute(
+            """
             create or replace view source_files_jst as
             select
               id,
@@ -169,7 +195,7 @@ def upsert_source_file(
     raw_text: str | None,
     parse_status: str,
     error_message: str | None,
-) -> None:
+) -> int:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -184,7 +210,8 @@ def upsert_source_file(
               raw_text = excluded.raw_text,
               parse_status = excluded.parse_status,
               error_message = excluded.error_message,
-              fetched_at = now();
+              fetched_at = now()
+            returning id;
             """,
             (
                 sale_date,
@@ -196,6 +223,88 @@ def upsert_source_file(
                 error_message,
             ),
         )
+        row = cur.fetchone()
+    conn.commit()
+    if not row:
+        raise RuntimeError("Failed to get source_files.id after upsert")
+    return int(row[0])
+
+
+def normalize_text_for_parse(text: str) -> str:
+    normalized = text.translate(str.maketrans("０１２３４５６７８９，", "0123456789,"))
+    return normalized.replace("\u3000", " ")
+
+
+def parse_decimal(token: str) -> Decimal | None:
+    try:
+        return Decimal(token.replace(",", ""))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def parse_market_rows(raw_text: str) -> list[dict]:
+    rows: list[dict] = []
+    for line_no, raw_line in enumerate(raw_text.splitlines(), start=1):
+        line = normalize_text_for_parse(raw_line).strip()
+        if not line:
+            continue
+
+        number_matches = list(NUMBER_PATTERN.finditer(line))
+        if len(number_matches) < 4:
+            continue
+
+        parsed_numbers: list[Decimal] = []
+        for m in number_matches:
+            value = parse_decimal(m.group(0))
+            if value is not None:
+                parsed_numbers.append(value)
+        if len(parsed_numbers) < 4:
+            continue
+
+        first_num_start = number_matches[0].start()
+        item_name = line[:first_num_start].strip(" :")
+        if not item_name:
+            continue
+
+        high_price, avg_price, low_price, quantity = parsed_numbers[-4:]
+        rows.append(
+            {
+                "line_no": line_no,
+                "raw_line": raw_line.strip(),
+                "item_name": item_name,
+                "quantity": quantity,
+                "high_price": high_price,
+                "avg_price": avg_price,
+                "low_price": low_price,
+                "parse_confidence": 60,
+            }
+        )
+    return rows
+
+
+def replace_market_rows(conn: psycopg.Connection, source_file_id: int, rows: list[dict]) -> None:
+    with conn.cursor() as cur:
+        cur.execute("delete from market_rows where source_file_id = %s;", (source_file_id,))
+        for row in rows:
+            cur.execute(
+                """
+                insert into market_rows (
+                  source_file_id, line_no, raw_line, item_name,
+                  quantity, high_price, avg_price, low_price, parse_confidence
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                """,
+                (
+                    source_file_id,
+                    row["line_no"],
+                    row["raw_line"],
+                    row["item_name"],
+                    row["quantity"],
+                    row["high_price"],
+                    row["avg_price"],
+                    row["low_price"],
+                    row["parse_confidence"],
+                ),
+            )
     conn.commit()
 
 
@@ -207,7 +316,7 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
             pdf_bytes = response.content
             digest = sha256_hex(pdf_bytes)
             text = extract_pdf_text(pdf_bytes)
-            upsert_source_file(
+            source_file_id = upsert_source_file(
                 conn=conn,
                 sale_date=sale_date,
                 source_url=source_url,
@@ -217,6 +326,8 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
                 parse_status="fetched",
                 error_message=None,
             )
+            parsed_rows = parse_market_rows(text)
+            replace_market_rows(conn, source_file_id, parsed_rows)
             print(f"[OK] {sale_date} {source_url}")
         except Exception as exc:  # noqa: BLE001
             upsert_source_file(
