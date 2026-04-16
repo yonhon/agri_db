@@ -18,6 +18,7 @@ PDF_URL_TEMPLATE = "https://www.oki-kyoudou.jp/Shikyo/PDF/HP%E5%B8%82%E6%B3%81{y
 DATE_PATTERN = re.compile(r"(20\d{6})")
 PDF_URL_PATTERN = re.compile(r"""["']([^"'<>\\s]+\.pdf)["']""", re.IGNORECASE)
 NUMBER_PATTERN = re.compile(r"\d[\d,]*")
+NUMBER_TOKEN_PATTERN = re.compile(r"^\d[\d,]*$")
 
 
 def fetch_pdf_links(session: requests.Session) -> list[tuple[str, date]]:
@@ -324,6 +325,102 @@ def parse_market_rows(raw_text: str) -> list[dict]:
     return rows
 
 
+def _is_numeric_token(text: str) -> bool:
+    return bool(NUMBER_TOKEN_PATTERN.match(normalize_text_for_parse(text)))
+
+
+def parse_market_rows_from_pdf(pdf_bytes: bytes) -> list[dict]:
+    rows: list[dict] = []
+    global_line_no = 0
+
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for page in pdf.pages:
+            words = page.extract_words(
+                x_tolerance=1.5,
+                y_tolerance=2.5,
+                use_text_flow=True,
+                keep_blank_chars=False,
+            )
+            if not words:
+                continue
+
+            # top座標を近い値でクラスタリングして、実質的な行を復元
+            sorted_words = sorted(words, key=lambda w: (float(w.get("top", 0.0)), float(w.get("x0", 0.0))))
+            lines: list[list[dict[str, Any]]] = []
+            current: list[dict[str, Any]] = []
+            current_top: float | None = None
+            tolerance = 2.0
+
+            for word in sorted_words:
+                top = float(word.get("top", 0.0))
+                if current_top is None or abs(top - current_top) <= tolerance:
+                    current.append(word)
+                    current_top = top if current_top is None else (current_top + top) / 2
+                else:
+                    lines.append(current)
+                    current = [word]
+                    current_top = top
+            if current:
+                lines.append(current)
+
+            for line_words in lines:
+                global_line_no += 1
+                line_words = sorted(line_words, key=lambda w: float(w.get("x0", 0.0)))
+                tokens: list[dict[str, Any]] = []
+                for word in line_words:
+                    text = str(word.get("text", "")).strip()
+                    if not text:
+                        continue
+                    tokens.append(
+                        {
+                            "text": text,
+                            "norm": normalize_text_for_parse(text),
+                            "x0": float(word.get("x0", 0.0)),
+                        }
+                    )
+                if len(tokens) < 2:
+                    continue
+
+                numeric_indexes = [i for i, t in enumerate(tokens) if _is_numeric_token(t["norm"])]
+                if len(numeric_indexes) < 4:
+                    continue
+
+                # 右側4列を価格/数量とみなす
+                picked = numeric_indexes[-4:]
+                parsed_values: list[Decimal] = []
+                for idx in picked:
+                    value = parse_decimal(tokens[idx]["norm"])
+                    if value is None:
+                        parsed_values = []
+                        break
+                    parsed_values.append(value)
+                if len(parsed_values) != 4:
+                    continue
+
+                first_value_index = picked[0]
+                name_parts = [t["text"] for t in tokens[:first_value_index] if t["text"]]
+                item_name = "".join(name_parts).strip(" :")
+                if not item_name:
+                    continue
+
+                raw_line = " ".join(t["text"] for t in tokens).strip()
+                high_price, avg_price, low_price, quantity = parsed_values
+                rows.append(
+                    {
+                        "line_no": global_line_no,
+                        "raw_line": raw_line,
+                        "item_name": item_name,
+                        "quantity": quantity,
+                        "high_price": high_price,
+                        "avg_price": avg_price,
+                        "low_price": low_price,
+                        "parse_confidence": 80,
+                    }
+                )
+
+    return rows
+
+
 def replace_market_rows(conn: psycopg.Connection, source_file_id: int, rows: list[dict]) -> None:
     with conn.cursor() as cur:
         cur.execute("delete from market_rows where source_file_id = %s;", (source_file_id,))
@@ -358,14 +455,19 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
             pdf_bytes = response.content
             digest = sha256_hex(pdf_bytes)
             text = extract_pdf_text(pdf_bytes)
-            parsed_rows = parse_market_rows(text)
+            parsed_rows = parse_market_rows_from_pdf(pdf_bytes)
             if len(parsed_rows) < 10:
-                # 座標再構築で行が細切れになるケースは従来抽出へフォールバック
+                # 座標抽出が崩れた場合はテキスト抽出ベースへフォールバック
+                text_rows = parse_market_rows(text)
                 fallback_text = extract_pdf_text_basic(pdf_bytes)
                 fallback_rows = parse_market_rows(fallback_text)
-                if len(fallback_rows) > len(parsed_rows):
+                best_rows = parsed_rows
+                if len(text_rows) > len(best_rows):
+                    best_rows = text_rows
+                if len(fallback_rows) > len(best_rows):
                     text = fallback_text
-                    parsed_rows = fallback_rows
+                    best_rows = fallback_rows
+                parsed_rows = best_rows
             source_file_id = upsert_source_file(
                 conn=conn,
                 sale_date=sale_date,
