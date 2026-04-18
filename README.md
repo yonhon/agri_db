@@ -133,3 +133,35 @@ grant select on table market_daily_item_stats to anon, authenticated;
 1. GitHubの `Settings > Pages` で Build and deployment を `GitHub Actions` に設定
 2. `main` へpush
 3. Actions の `Deploy Dashboard (GitHub Pages)` 完了後、Pages URLで表示
+
+## 10. 利用状況ログ（日次/月次UU・PV・エラー）を確認する
+
+`localStorage` に `visitor_id` を保存し、ページ表示時に `page_view`、JS例外時に `error` を記録します。
+
+### 10-1. スキーマ反映
+
+- `sql/init.sql` を再実行する  
+  または `python -m src.agri_db.main` を1回実行（`ensure_schema` が同じ定義を作成）
+
+追加される主なオブジェクト:
+
+- `usage_events`（生ログ）
+- `usage_daily_metrics_jst`（日次UU/PV/error）
+- `usage_monthly_metrics_jst`（月次UU/PV/error）
+- `usage_daily_user_pv_jst`（日次ユーザー別PV）
+- `usage_monthly_user_pv_jst`（月次ユーザー別PV）
+- `usage_error_latest_7d_jst`（直近7日エラー上位）
+
+### 10-2. 閲覧ページ
+
+- 既存ページ: `dashboard/index.html`
+  - ヘッダーの `利用ログ` ボタンから遷移
+- 新規ページ: `dashboard/usage-admin.html`
+  - 日次トレンド（UU/PV/上位5ユーザーPV、30/90日切替）
+  - 月次トレンド（UU/PV/上位5ユーザーPV、直近12か月）
+  - エラー監視（日次件数 + 直近7日エラー上位）
+
+### 10-3. 注意点
+
+- `visitor_id` はブラウザのデータ削除や環境差分で変わるため、UUは推定値です。
+- `usage_events` は anon insert を許可しています。必要に応じて Supabase 側で追加制限（レート制限・WAF等）を設定してください。
