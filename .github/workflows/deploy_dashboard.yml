@@ -34,6 +34,20 @@ jobs:
         run: |
           mkdir public
           cp -r dashboard/* public/
+          for asset in public/*.js public/*.css; do
+            if [ ! -f "$asset" ]; then
+              continue
+            fi
+            base=$(basename "$asset")
+            name="${base%.*}"
+            ext="${base##*.}"
+            hash=$(sha256sum "$asset" | cut -c1-12)
+            new_name="${name}.${hash}.${ext}"
+            mv "$asset" "public/${new_name}"
+            for html in public/*.html; do
+              sed -i "s|\\./${base}|./${new_name}|g" "$html"
+            done
+          done
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
