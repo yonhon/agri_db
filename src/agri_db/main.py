@@ -609,6 +609,7 @@ def ensure_schema(conn: psycopg.Connection) -> None:
               count(distinct visitor_id) filter (where event_type = 'page_view')::bigint as uu,
               count(*) filter (where event_type = 'error')::bigint as error_count
             from usage_events
+            where page_path not like '%usage-admin.html%'
             group by 1;
             """
         )
@@ -622,6 +623,7 @@ def ensure_schema(conn: psycopg.Connection) -> None:
               count(distinct visitor_id) filter (where event_type = 'page_view')::bigint as uu,
               count(*) filter (where event_type = 'error')::bigint as error_count
             from usage_events
+            where page_path not like '%usage-admin.html%'
             group by 1;
             """
         )
@@ -635,6 +637,7 @@ def ensure_schema(conn: psycopg.Connection) -> None:
               count(*)::bigint as pv
             from usage_events
             where event_type = 'page_view'
+              and page_path not like '%usage-admin.html%'
             group by 1, visitor_id;
             """
         )
@@ -648,6 +651,7 @@ def ensure_schema(conn: psycopg.Connection) -> None:
               count(*)::bigint as pv
             from usage_events
             where event_type = 'page_view'
+              and page_path not like '%usage-admin.html%'
             group by 1, visitor_id;
             """
         )
@@ -663,6 +667,7 @@ def ensure_schema(conn: psycopg.Connection) -> None:
               max(event_at at time zone 'Asia/Tokyo') as last_seen_at_jst
             from usage_events
             where event_type = 'error'
+              and page_path not like '%usage-admin.html%'
               and event_at >= now() - interval '7 days'
             group by 1, 2
             order by count_7d desc, last_seen_at desc;
