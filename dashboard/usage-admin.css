@@ -1,0 +1,32 @@
+.nav-link-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.chart-sm {
+  height: 280px;
+}
+
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.usage-meta {
+  margin-bottom: 10px;
+}
+
+@media (max-width: 800px) {
+  .usage-grid {
+    grid-template-columns: 1fr;
+  }
+}
