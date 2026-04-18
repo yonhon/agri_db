@@ -20,10 +20,12 @@
     trendItems: [],
     focusItem: "",
     corrFocusItem: "",
+    analyticsClient: null,
   };
 
   const trendChart = echarts.init(document.getElementById("trendChart"));
   const comboChart = echarts.init(document.getElementById("comboChart"));
+  const VISITOR_ID_KEY = "agri_dashboard_visitor_id";
 
   function setStatus(message) {
     statusEl.textContent = message;
@@ -60,6 +62,74 @@
       return "-";
     }
     return value.toFixed(3);
+  }
+
+  function createVisitorId() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+    return `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function getVisitorId() {
+    try {
+      const current = localStorage.getItem(VISITOR_ID_KEY);
+      if (current && current.length >= 8 && current.length <= 64) {
+        return current;
+      }
+      const next = createVisitorId();
+      localStorage.setItem(VISITOR_ID_KEY, next);
+      return next;
+    } catch (_) {
+      return createVisitorId();
+    }
+  }
+
+  function sanitizeMessage(message) {
+    if (!message) {
+      return "";
+    }
+    return String(message).replace(/\s+/g, " ").slice(0, 200);
+  }
+
+  async function logUsageEvent(client, payload) {
+    if (!client) {
+      return;
+    }
+    try {
+      await client.from("usage_events").insert(payload);
+    } catch (_) {
+      // No-op: logging failure should not block UI rendering.
+    }
+  }
+
+  function setupErrorLogging(client) {
+    window.addEventListener("error", (event) => {
+      void logUsageEvent(client, {
+        visitor_id: getVisitorId(),
+        event_type: "error",
+        page_path: window.location.pathname || "/",
+        error_code: "window_error",
+        message_summary: sanitizeMessage(event.message),
+        metadata: {
+          filename: event.filename || "",
+          line: event.lineno || null,
+          col: event.colno || null,
+        },
+      });
+    });
+
+    window.addEventListener("unhandledrejection", (event) => {
+      const reason = event.reason && event.reason.message ? event.reason.message : String(event.reason || "");
+      void logUsageEvent(client, {
+        visitor_id: getVisitorId(),
+        event_type: "error",
+        page_path: window.location.pathname || "/",
+        error_code: "unhandled_rejection",
+        message_summary: sanitizeMessage(reason),
+        metadata: {},
+      });
+    });
   }
 
   function scoreBand(score) {
@@ -642,6 +712,16 @@
 
     try {
       const client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+      state.analyticsClient = client;
+      setupErrorLogging(client);
+      void logUsageEvent(client, {
+        visitor_id: getVisitorId(),
+        event_type: "page_view",
+        page_path: window.location.pathname || "/",
+        metadata: {
+          referrer: document.referrer || "",
+        },
+      });
       state.rows = await fetchAllRows(client);
       state.rows.sort((a, b) => a.sale_date.localeCompare(b.sale_date));
       state.seriesByItem = buildSeriesByItem(state.rows);
@@ -651,6 +731,16 @@
       }
       renderAll();
     } catch (error) {
+      if (state.analyticsClient) {
+        void logUsageEvent(state.analyticsClient, {
+          visitor_id: getVisitorId(),
+          event_type: "error",
+          page_path: window.location.pathname || "/",
+          error_code: "dashboard_load_failed",
+          message_summary: sanitizeMessage(error.message || String(error)),
+          metadata: {},
+        });
+      }
       setStatus(`読み込み失敗: ${error.message || String(error)}`);
     }
   }
