@@ -820,8 +820,11 @@ def replace_market_rows(conn: psycopg.Connection, source_file_id: int, rows: lis
     conn.commit()
 
 
-def process_links(conn: psycopg.Connection, session: requests.Session, links: Iterable[tuple[str, date]]) -> list[dict[str, str]]:
+def process_links(
+    conn: psycopg.Connection, session: requests.Session, links: Iterable[tuple[str, date]]
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     alerts: list[dict[str, str]] = []
+    failures: list[dict[str, str]] = []
     for source_url, sale_date in links:
         try:
             response = session.get(source_url, timeout=60)
@@ -885,8 +888,15 @@ def process_links(conn: psycopg.Connection, session: requests.Session, links: It
                 parse_status="failed",
                 error_message=str(exc)[:1000],
             )
+            failures.append(
+                {
+                    "sale_date": str(sale_date),
+                    "source_url": source_url,
+                    "error_message": str(exc)[:1000],
+                }
+            )
             print(f"[NG] {sale_date} {source_url} {exc}")
-    return alerts
+    return alerts, failures
 
 
 def raise_on_format_alerts(alerts: list[dict[str, str]]) -> None:
@@ -899,6 +909,18 @@ def raise_on_format_alerts(alerts: list[dict[str, str]]) -> None:
             f"prev={alert['previous_signature']} current={alert['current_signature']}"
         )
     raise RuntimeError(f"format_alert detected in {len(alerts)} file(s)")
+
+
+def raise_on_ingest_failures(failures: list[dict[str, str]]) -> None:
+    if not failures:
+        return
+    for failure in failures:
+        print(
+            "::error title=IngestFailed::"
+            f"{failure['sale_date']} {failure['source_url']} "
+            f"error={failure['error_message']}"
+        )
+    raise RuntimeError(f"ingest failed in {len(failures)} file(s)")
 
 
 def main() -> None:
@@ -917,7 +939,8 @@ def main() -> None:
             print(f"[INFO] links from direct probe fallback: {len(links)}")
         if not links:
             raise RuntimeError("No PDF links found (listing + fallback probe)")
-        alerts = process_links(conn, session, links)
+        alerts, failures = process_links(conn, session, links)
+        raise_on_ingest_failures(failures)
         raise_on_format_alerts(alerts)
 
 
