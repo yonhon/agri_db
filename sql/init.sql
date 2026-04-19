@@ -115,6 +115,8 @@ where sf.parse_status = 'fetched'
   and mr.item_name <> ''
 group by sf.sale_date, mr.item_name;
 
+grant select on table market_daily_item_stats to anon, authenticated;
+
 create table if not exists usage_events (
   id bigserial primary key,
   event_at timestamptz not null default now(),
@@ -214,3 +216,5 @@ grant select on table usage_monthly_metrics_jst to anon, authenticated;
 grant select on table usage_daily_user_pv_jst to anon, authenticated;
 grant select on table usage_monthly_user_pv_jst to anon, authenticated;
 grant select on table usage_error_latest_7d_jst to anon, authenticated;
+grant insert on table usage_events to anon, authenticated;
+grant usage, select on sequence usage_events_id_seq to anon, authenticated;
