@@ -700,7 +700,6 @@ def detect_caption_change(conn: psycopg.Connection, current_signature: str) -> t
             """,
             (current_signature,),
         )
-    conn.commit()
     return bool(previous and previous != current_signature), previous
 
 
@@ -748,7 +747,6 @@ def upsert_source_file(
             ),
         )
         row = cur.fetchone()
-    conn.commit()
     if not row:
         raise RuntimeError("Failed to get source_files.id after upsert")
     return int(row[0])
@@ -791,7 +789,6 @@ def touch_source_file_fetched(
             """,
             (sale_date, pdf_sha256, pdf_size_bytes, source_file_id),
         )
-    conn.commit()
 
 
 def replace_market_rows(conn: psycopg.Connection, source_file_id: int, rows: list[dict[str, Any]]) -> None:
@@ -817,7 +814,6 @@ def replace_market_rows(conn: psycopg.Connection, source_file_id: int, rows: lis
                     row["parse_confidence"],
                 ),
             )
-    conn.commit()
 
 
 def process_links(
@@ -833,33 +829,35 @@ def process_links(
             digest = sha256_hex(pdf_bytes)
             existing = get_source_file_snapshot(conn, source_url)
             if existing and existing["pdf_sha256"] == digest:
-                touch_source_file_fetched(
-                    conn=conn,
-                    source_file_id=int(existing["id"]),
-                    sale_date=sale_date,
-                    pdf_sha256=digest,
-                    pdf_size_bytes=len(pdf_bytes),
-                )
+                with conn.transaction():
+                    touch_source_file_fetched(
+                        conn=conn,
+                        source_file_id=int(existing["id"]),
+                        sale_date=sale_date,
+                        pdf_sha256=digest,
+                        pdf_size_bytes=len(pdf_bytes),
+                    )
                 print(f"[SKIP] {sale_date} {source_url} unchanged_sha256={digest}")
                 continue
 
             raw_text = extract_raw_text_basic(pdf_bytes)
             parsed_rows, caption_signature = extract_market_rows_from_pdf(pdf_bytes)
-            format_alert, previous_signature = detect_caption_change(conn, caption_signature)
+            with conn.transaction():
+                format_alert, previous_signature = detect_caption_change(conn, caption_signature)
 
-            source_file_id = upsert_source_file(
-                conn=conn,
-                sale_date=sale_date,
-                source_url=source_url,
-                pdf_sha256=digest,
-                pdf_size_bytes=len(pdf_bytes),
-                raw_text=raw_text,
-                caption_signature=caption_signature,
-                format_alert=format_alert,
-                parse_status="fetched",
-                error_message=None,
-            )
-            replace_market_rows(conn, source_file_id, parsed_rows)
+                source_file_id = upsert_source_file(
+                    conn=conn,
+                    sale_date=sale_date,
+                    source_url=source_url,
+                    pdf_sha256=digest,
+                    pdf_size_bytes=len(pdf_bytes),
+                    raw_text=raw_text,
+                    caption_signature=caption_signature,
+                    format_alert=format_alert,
+                    parse_status="fetched",
+                    error_message=None,
+                )
+                replace_market_rows(conn, source_file_id, parsed_rows)
 
             if format_alert:
                 alerts.append(
@@ -876,18 +874,19 @@ def process_links(
                 )
             print(f"[OK] {sale_date} {source_url} rows={len(parsed_rows)}")
         except Exception as exc:  # noqa: BLE001
-            upsert_source_file(
-                conn=conn,
-                sale_date=sale_date,
-                source_url=source_url,
-                pdf_sha256="",
-                pdf_size_bytes=0,
-                raw_text=None,
-                caption_signature=None,
-                format_alert=False,
-                parse_status="failed",
-                error_message=str(exc)[:1000],
-            )
+            with conn.transaction():
+                upsert_source_file(
+                    conn=conn,
+                    sale_date=sale_date,
+                    source_url=source_url,
+                    pdf_sha256="",
+                    pdf_size_bytes=0,
+                    raw_text=None,
+                    caption_signature=None,
+                    format_alert=False,
+                    parse_status="failed",
+                    error_message=str(exc)[:1000],
+                )
             failures.append(
                 {
                     "sale_date": str(sale_date),
