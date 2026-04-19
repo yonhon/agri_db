@@ -550,6 +550,7 @@ def ensure_schema(conn: psycopg.Connection) -> None:
             group by sf.sale_date, mr.item_name;
             """
         )
+        cur.execute("grant select on table market_daily_item_stats to anon, authenticated;")
         cur.execute(
             """
             create table if not exists usage_events (
@@ -678,6 +679,8 @@ def ensure_schema(conn: psycopg.Connection) -> None:
         cur.execute("grant select on table usage_daily_user_pv_jst to anon, authenticated;")
         cur.execute("grant select on table usage_monthly_user_pv_jst to anon, authenticated;")
         cur.execute("grant select on table usage_error_latest_7d_jst to anon, authenticated;")
+        cur.execute("grant insert on table usage_events to anon, authenticated;")
+        cur.execute("grant usage, select on sequence usage_events_id_seq to anon, authenticated;")
         # Ensure PostgREST refreshes schema cache after view/index updates.
         cur.execute("select pg_notify('pgrst', 'reload schema');")
     conn.commit()
