@@ -31,6 +31,41 @@
     statusEl.textContent = message;
   }
 
+  function clearChildren(el) {
+    while (el.firstChild) {
+      el.removeChild(el.firstChild);
+    }
+  }
+
+  function appendOption(selectEl, value, label) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    selectEl.appendChild(option);
+  }
+
+  function appendTableCell(rowEl, text, className, title) {
+    const td = document.createElement("td");
+    td.textContent = text;
+    if (className) {
+      td.className = className;
+    }
+    if (title) {
+      td.title = title;
+    }
+    rowEl.appendChild(td);
+  }
+
+  function renderEmptyTableRow(targetEl, colspan, message) {
+    clearChildren(targetEl);
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = colspan;
+    td.textContent = message;
+    tr.appendChild(td);
+    targetEl.appendChild(tr);
+  }
+
   function asNumber(value) {
     const n = Number(value);
     return Number.isFinite(n) ? n : null;
@@ -241,9 +276,14 @@
     const ranked = getItemCandidates(periodRows).filter((item) => items.includes(item));
     const orderedItems = [...ranked, ...items.filter((i) => !ranked.includes(i))];
 
-    trendItemsEl.innerHTML = orderedItems.map((item) => `<option value="${item}">${item}</option>`).join("");
-    focusItemEl.innerHTML = orderedItems.map((item) => `<option value="${item}">${item}</option>`).join("");
-    corrFocusItemEl.innerHTML = orderedItems.map((item) => `<option value="${item}">${item}</option>`).join("");
+    clearChildren(trendItemsEl);
+    clearChildren(focusItemEl);
+    clearChildren(corrFocusItemEl);
+    orderedItems.forEach((item) => {
+      appendOption(trendItemsEl, item, item);
+      appendOption(focusItemEl, item, item);
+      appendOption(corrFocusItemEl, item, item);
+    });
 
     const defaultTrendCount = Math.min(Number(config.trendDefaultItems) || 6, orderedItems.length);
     if (!state.trendItems.length) {
@@ -272,7 +312,7 @@
   function renderKpiCards(periodRows) {
     const latestDate = getLatestDate(periodRows);
     if (!latestDate) {
-      kpiCardsEl.innerHTML = "";
+      clearChildren(kpiCardsEl);
       kpiDateLabelEl.textContent = "";
       return;
     }
@@ -303,29 +343,36 @@
     const top = changes.slice(0, 3);
     const bottom = [...changes].sort((a, b) => a.changeRate - b.changeRate).slice(0, 3);
 
-    const topCards = top.map((d, i) => {
-      return `
-        <article class="kpi-card up">
-          <div class="kpi-rank">上昇 ${i + 1}</div>
-          <div class="kpi-item">${d.item_name}</div>
-          <div class="kpi-rate up">${fmtRate(d.changeRate)}</div>
-          <div class="kpi-sub">${fmtPrice(d.current)} / 前日 ${fmtPrice(d.previous)}</div>
-        </article>
-      `;
-    });
+    clearChildren(kpiCardsEl);
+    const appendCard = (d, index, type) => {
+      const article = document.createElement("article");
+      article.className = `kpi-card ${type}`;
 
-    const bottomCards = bottom.map((d, i) => {
-      return `
-        <article class="kpi-card down">
-          <div class="kpi-rank">下落 ${i + 1}</div>
-          <div class="kpi-item">${d.item_name}</div>
-          <div class="kpi-rate down">${fmtRate(d.changeRate)}</div>
-          <div class="kpi-sub">${fmtPrice(d.current)} / 前日 ${fmtPrice(d.previous)}</div>
-        </article>
-      `;
-    });
+      const rank = document.createElement("div");
+      rank.className = "kpi-rank";
+      rank.textContent = `${type === "up" ? "上昇" : "下落"} ${index + 1}`;
+      article.appendChild(rank);
 
-    kpiCardsEl.innerHTML = [...topCards, ...bottomCards].join("");
+      const item = document.createElement("div");
+      item.className = "kpi-item";
+      item.textContent = d.item_name;
+      article.appendChild(item);
+
+      const rate = document.createElement("div");
+      rate.className = `kpi-rate ${type}`;
+      rate.textContent = fmtRate(d.changeRate);
+      article.appendChild(rate);
+
+      const sub = document.createElement("div");
+      sub.className = "kpi-sub";
+      sub.textContent = `${fmtPrice(d.current)} / 前日 ${fmtPrice(d.previous)}`;
+      article.appendChild(sub);
+
+      kpiCardsEl.appendChild(article);
+    };
+
+    top.forEach((d, i) => appendCard(d, i, "up"));
+    bottom.forEach((d, i) => appendCard(d, i, "down"));
     kpiDateLabelEl.textContent = `基準日: ${latestDate}`;
   }
 
@@ -581,28 +628,25 @@
 
   function renderPairTable(targetEl, rows, emptyText) {
     if (!rows.length) {
-      targetEl.innerHTML = `<tr><td colspan="4">${emptyText}</td></tr>`;
+      renderEmptyTableRow(targetEl, 4, emptyText);
       return;
     }
-    targetEl.innerHTML = rows
-      .map((row, idx) => {
-        const zone = scoreBand(row.score);
-        return `
-          <tr>
-            <td class="rank">${idx + 1}</td>
-            <td>${row.itemA} × ${row.itemB}</td>
-            <td class="corr score-band-${zone.band}" title="${zone.label}">${fmtCorr(row.score)}</td>
-            <td>${row.overlap}</td>
-          </tr>
-        `;
-      })
-      .join("");
+    clearChildren(targetEl);
+    rows.forEach((row, idx) => {
+      const zone = scoreBand(row.score);
+      const tr = document.createElement("tr");
+      appendTableCell(tr, String(idx + 1), "rank");
+      appendTableCell(tr, `${row.itemA} × ${row.itemB}`);
+      appendTableCell(tr, fmtCorr(row.score), `corr score-band-${zone.band}`, zone.label);
+      appendTableCell(tr, String(row.overlap));
+      targetEl.appendChild(tr);
+    });
   }
 
   function renderFocusRanking(corrData) {
     const focus = state.corrFocusItem;
     if (!focus) {
-      corrFocusRankingBodyEl.innerHTML = '<tr><td colspan="4">品目を選択してください。</td></tr>';
+      renderEmptyTableRow(corrFocusRankingBodyEl, 4, "品目を選択してください。");
       return;
     }
     const related = corrData.pairs
@@ -616,22 +660,19 @@
       .slice(0, 20);
 
     if (!related.length) {
-      corrFocusRankingBodyEl.innerHTML = '<tr><td colspan="4">十分な共通日数のペアがありません。</td></tr>';
+      renderEmptyTableRow(corrFocusRankingBodyEl, 4, "十分な共通日数のペアがありません。");
       return;
     }
-    corrFocusRankingBodyEl.innerHTML = related
-      .map((r, idx) => {
-        const zone = scoreBand(r.score);
-        return `
-          <tr>
-            <td class="rank">${idx + 1}</td>
-            <td>${r.other}</td>
-            <td class="corr score-band-${zone.band}" title="${zone.label}">${fmtCorr(r.score)}</td>
-            <td>${r.overlap}</td>
-          </tr>
-        `;
-      })
-      .join("");
+    clearChildren(corrFocusRankingBodyEl);
+    related.forEach((r, idx) => {
+      const zone = scoreBand(r.score);
+      const tr = document.createElement("tr");
+      appendTableCell(tr, String(idx + 1), "rank");
+      appendTableCell(tr, r.other);
+      appendTableCell(tr, fmtCorr(r.score), `corr score-band-${zone.band}`, zone.label);
+      appendTableCell(tr, String(r.overlap));
+      corrFocusRankingBodyEl.appendChild(tr);
+    });
   }
 
   function renderCorrelationTables(periodRows) {
