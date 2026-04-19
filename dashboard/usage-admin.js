@@ -28,6 +28,31 @@
     statusEl.textContent = message;
   }
 
+  function clearChildren(el) {
+    while (el.firstChild) {
+      el.removeChild(el.firstChild);
+    }
+  }
+
+  function appendTableCell(rowEl, text, className) {
+    const td = document.createElement("td");
+    td.textContent = text;
+    if (className) {
+      td.className = className;
+    }
+    rowEl.appendChild(td);
+  }
+
+  function renderEmptyTableRow(targetEl, colspan, message) {
+    clearChildren(targetEl);
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = colspan;
+    td.textContent = message;
+    tr.appendChild(td);
+    targetEl.appendChild(tr);
+  }
+
   function fmtYmd(dateStr) {
     return new Date(`${dateStr}T00:00:00+09:00`).toLocaleDateString("ja-JP", {
       month: "2-digit",
@@ -328,23 +353,19 @@
     errorMetaEl.textContent = `表示期間: 直近${state.periodDays}日`;
 
     if (!state.errorLatest.length) {
-      errorLatestBodyEl.innerHTML = '<tr><td colspan="5">直近7日でエラーはありません。</td></tr>';
+      renderEmptyTableRow(errorLatestBodyEl, 5, "直近7日でエラーはありません。");
       return;
     }
-    errorLatestBodyEl.innerHTML = state.errorLatest
-      .slice(0, 20)
-      .map((row, idx) => {
-        return `
-          <tr>
-            <td class="rank">${idx + 1}</td>
-            <td>${row.error_code}</td>
-            <td>${row.message_summary}</td>
-            <td>${Number(row.count_7d || 0)}</td>
-            <td>${fmtDateTime(row.last_seen_at)}</td>
-          </tr>
-        `;
-      })
-      .join("");
+    clearChildren(errorLatestBodyEl);
+    state.errorLatest.slice(0, 20).forEach((row, idx) => {
+      const tr = document.createElement("tr");
+      appendTableCell(tr, String(idx + 1), "rank");
+      appendTableCell(tr, String(row.error_code || ""));
+      appendTableCell(tr, String(row.message_summary || ""));
+      appendTableCell(tr, String(Number(row.count_7d || 0)));
+      appendTableCell(tr, fmtDateTime(row.last_seen_at));
+      errorLatestBodyEl.appendChild(tr);
+    });
   }
 
   function renderAll() {
