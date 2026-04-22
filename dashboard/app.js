@@ -1,6 +1,8 @@
 (function () {
   const config = window.DASHBOARD_CONFIG || {};
   const statusEl = document.getElementById("statusMessage");
+  const recentUpdatesSectionEl = document.getElementById("recentUpdatesSection");
+  const recentUpdatesListEl = document.getElementById("recentUpdatesList");
   const kpiCardsEl = document.getElementById("kpiCards");
   const kpiDateLabelEl = document.getElementById("kpiDateLabel");
   const trendItemsEl = document.getElementById("trendItems");
@@ -23,6 +25,7 @@
     corrFocusItem: "",
     analyticsClient: null,
   };
+  const UPDATES_JSON_PATH = "./updates.json";
 
   const trendChart = echarts.init(document.getElementById("trendChart"));
   const comboChart = echarts.init(document.getElementById("comboChart"));
@@ -45,6 +48,71 @@
     option.value = value;
     option.textContent = label;
     selectEl.appendChild(option);
+  }
+
+  function parseLocalYmd(value) {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return null;
+    }
+    const d = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(d.getTime())) {
+      return null;
+    }
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  function filterRecentUpdates(items, maxDays) {
+    if (!Array.isArray(items) || !Number.isFinite(maxDays) || maxDays < 0) {
+      return [];
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const msPerDay = 24 * 60 * 60 * 1000;
+    return items.filter((item) => {
+      if (!item || typeof item !== "object") {
+        return false;
+      }
+      const posted = parseLocalYmd(item.posted_at);
+      if (!posted || typeof item.message !== "string" || !item.message.trim()) {
+        return false;
+      }
+      const diffDays = Math.floor((today.getTime() - posted.getTime()) / msPerDay);
+      return diffDays >= 0 && diffDays <= maxDays;
+    });
+  }
+
+  async function loadUpdatesFromJson() {
+    try {
+      const response = await fetch(UPDATES_JSON_PATH, { cache: "no-store" });
+      if (!response.ok) {
+        return [];
+      }
+      const data = await response.json();
+      return Array.isArray(data) ? data : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  async function renderRecentUpdates() {
+    if (!recentUpdatesSectionEl || !recentUpdatesListEl) {
+      return;
+    }
+    const loaded = await loadUpdatesFromJson();
+    const recentUpdates = filterRecentUpdates(loaded, 7);
+    if (!recentUpdates.length) {
+      clearChildren(recentUpdatesListEl);
+      recentUpdatesSectionEl.hidden = true;
+      return;
+    }
+    clearChildren(recentUpdatesListEl);
+    recentUpdates.forEach((item) => {
+      const li = document.createElement("li");
+      li.textContent = item.message;
+      recentUpdatesListEl.appendChild(li);
+    });
+    recentUpdatesSectionEl.hidden = false;
   }
 
   function appendTableCell(rowEl, text, className, title) {
@@ -957,6 +1025,7 @@
     }
 
     attachEvents();
+    await renderRecentUpdates();
     loadSelectorPrefs();
     setStatus("Supabaseからデータを取得中...");
 
