@@ -705,17 +705,49 @@
       return;
     }
 
-    const latestRows = periodRows
-      .filter((r) => r.sale_date === latestDate && Number.isFinite(r.avg_price))
-      .sort((a, b) => (b.avg_price || 0) - (a.avg_price || 0));
+    const latest = parseISODate(latestDate);
+    const windowStartDate = new Date(latest);
+    windowStartDate.setUTCDate(windowStartDate.getUTCDate() - 6);
+    const windowStart = windowStartDate.toISOString().slice(0, 10);
 
-    if (!latestRows.length) {
-      unitPriceMetaLabelEl.textContent = `基準日: ${latestDate} | 単価データがありません。`;
+    const windowRows = periodRows.filter(
+      (r) =>
+        r.sale_date >= windowStart &&
+        r.sale_date <= latestDate &&
+        Number.isFinite(r.avg_price) &&
+        Number.isFinite(r.quantity) &&
+        (r.quantity || 0) > 0
+    );
+
+    const aggByItem = new Map();
+    windowRows.forEach((r) => {
+      const key = r.item_name;
+      if (!aggByItem.has(key)) {
+        aggByItem.set(key, { weightedSum: 0, qtySum: 0 });
+      }
+      const acc = aggByItem.get(key);
+      const qty = r.quantity || 0;
+      const price = r.avg_price || 0;
+      acc.weightedSum += price * qty;
+      acc.qtySum += qty;
+    });
+
+    const weightedRows = Array.from(aggByItem.entries())
+      .map(([item_name, acc]) => ({
+        item_name,
+        weighted_avg_price: acc.qtySum > 0 ? acc.weightedSum / acc.qtySum : null,
+        total_quantity: acc.qtySum,
+      }))
+      .filter((r) => Number.isFinite(r.weighted_avg_price))
+      .sort((a, b) => (b.weighted_avg_price || 0) - (a.weighted_avg_price || 0));
+
+    if (!weightedRows.length) {
+      unitPriceMetaLabelEl.textContent = `対象期間: ${windowStart}〜${latestDate} | 加重平均単価データがありません。`;
       unitPriceChart.setOption(
         {
           animationDuration: 300,
           title: {
-            text: "単価データがありません。",
+            text: "7日加重平均単価データがありません。",
             left: "center",
             top: "middle",
             textStyle: { color: "#5b6c5a", fontSize: 14, fontWeight: 500 },
@@ -726,18 +758,18 @@
       return;
     }
 
-    const prices = latestRows.map((r) => r.avg_price || 0);
+    const prices = weightedRows.map((r) => r.weighted_avg_price || 0);
     const maxPrice = Math.max(...prices);
     const axisMax = maxPrice > 0 ? maxPrice * 1.08 : 1;
     const medianPrice = median(prices);
     const q75 = quantile(prices, 0.75);
     const q25 = quantile(prices, 0.25);
 
-    unitPriceMetaLabelEl.textContent = `基準日: ${latestDate} | 品目数: ${latestRows.length} | 中央値: ${fmtPrice(medianPrice)}`;
+    unitPriceMetaLabelEl.textContent = `対象期間: ${windowStart}〜${latestDate} | 品目数: ${weightedRows.length} | 中央値: ${fmtPrice(medianPrice)}`;
 
-    const yItems = latestRows.map((r) => r.item_name);
-    const values = latestRows.map((r) => r.avg_price || 0);
-    const initialVisibleCount = Math.min(26, latestRows.length);
+    const yItems = weightedRows.map((r) => r.item_name);
+    const values = weightedRows.map((r) => r.weighted_avg_price || 0);
+    const initialVisibleCount = Math.min(26, weightedRows.length);
     const endValue = Math.max(0, initialVisibleCount - 1);
 
     unitPriceChart.setOption(
@@ -747,8 +779,8 @@
           trigger: "item",
           formatter: (p) => {
             const idx = p.dataIndex;
-            const row = latestRows[idx];
-            return `${row.item_name}<br/>平均単価: ${fmtPrice(row.avg_price)}<br/>入荷量: ${(row.quantity || 0).toLocaleString("ja-JP")}`;
+            const row = weightedRows[idx];
+            return `${row.item_name}<br/>7日加重平均単価: ${fmtPrice(row.weighted_avg_price)}<br/>7日累計入荷量: ${(row.total_quantity || 0).toLocaleString("ja-JP")}`;
           },
         },
         grid: { left: 130, right: 48, top: 14, bottom: 58 },
