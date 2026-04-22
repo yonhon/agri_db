@@ -7,6 +7,7 @@
   const focusItemEl = document.getElementById("focusItem");
   const corrFocusItemEl = document.getElementById("corrFocusItem");
   const corrMetaLabelEl = document.getElementById("corrMetaLabel");
+  const unitPriceMetaLabelEl = document.getElementById("unitPriceMetaLabel");
   const corrTopPairsBodyEl = document.getElementById("corrTopPairsBody");
   const corrBottomPairsBodyEl = document.getElementById("corrBottomPairsBody");
   const corrFocusRankingBodyEl = document.getElementById("corrFocusRankingBody");
@@ -25,6 +26,7 @@
 
   const trendChart = echarts.init(document.getElementById("trendChart"));
   const comboChart = echarts.init(document.getElementById("comboChart"));
+  const unitPriceChart = echarts.init(document.getElementById("unitPriceChart"));
   const VISITOR_ID_KEY = "agri_dashboard_visitor_id";
   const SELECTOR_PREFS_KEY = "agri_dashboard_selector_prefs_v1";
 
@@ -684,6 +686,134 @@
     });
   }
 
+  function renderUnitPriceLollipop(periodRows) {
+    const latestDate = getLatestDate(periodRows);
+    if (!latestDate) {
+      unitPriceMetaLabelEl.textContent = "表示データがありません。";
+      unitPriceChart.setOption(
+        {
+          animationDuration: 300,
+          title: {
+            text: "表示できるデータがありません。",
+            left: "center",
+            top: "middle",
+            textStyle: { color: "#5b6c5a", fontSize: 14, fontWeight: 500 },
+          },
+        },
+        true
+      );
+      return;
+    }
+
+    const latestRows = periodRows
+      .filter((r) => r.sale_date === latestDate && Number.isFinite(r.avg_price))
+      .sort((a, b) => (b.avg_price || 0) - (a.avg_price || 0));
+
+    if (!latestRows.length) {
+      unitPriceMetaLabelEl.textContent = `基準日: ${latestDate} | 単価データがありません。`;
+      unitPriceChart.setOption(
+        {
+          animationDuration: 300,
+          title: {
+            text: "単価データがありません。",
+            left: "center",
+            top: "middle",
+            textStyle: { color: "#5b6c5a", fontSize: 14, fontWeight: 500 },
+          },
+        },
+        true
+      );
+      return;
+    }
+
+    const prices = latestRows.map((r) => r.avg_price || 0);
+    const maxPrice = Math.max(...prices);
+    const axisMax = maxPrice > 0 ? maxPrice * 1.08 : 1;
+    const medianPrice = median(prices);
+    const q75 = quantile(prices, 0.75);
+    const q25 = quantile(prices, 0.25);
+
+    unitPriceMetaLabelEl.textContent = `基準日: ${latestDate} | 品目数: ${latestRows.length} | 中央値: ${fmtPrice(medianPrice)}`;
+
+    const yItems = latestRows.map((r) => r.item_name);
+    const values = latestRows.map((r) => r.avg_price || 0);
+    const initialVisibleCount = Math.min(26, latestRows.length);
+    const endValue = Math.max(0, initialVisibleCount - 1);
+
+    unitPriceChart.setOption(
+      {
+        animationDuration: 400,
+        tooltip: {
+          trigger: "item",
+          formatter: (p) => {
+            const idx = p.dataIndex;
+            const row = latestRows[idx];
+            return `${row.item_name}<br/>平均単価: ${fmtPrice(row.avg_price)}<br/>入荷量: ${(row.quantity || 0).toLocaleString("ja-JP")}`;
+          },
+        },
+        grid: { left: 130, right: 48, top: 14, bottom: 58 },
+        xAxis: {
+          type: "value",
+          min: 0,
+          max: axisMax,
+          axisLabel: { color: "#516050", formatter: (v) => `${Math.round(v).toLocaleString("ja-JP")}円` },
+          splitLine: { lineStyle: { color: "#e7eee4" } },
+        },
+        yAxis: {
+          type: "category",
+          inverse: true,
+          data: yItems,
+          axisLabel: { color: "#2e3f2f", fontSize: 11 },
+          axisTick: { show: false },
+        },
+        dataZoom: [
+          {
+            type: "inside",
+            yAxisIndex: 0,
+            startValue: 0,
+            endValue,
+            zoomOnMouseWheel: true,
+            moveOnMouseMove: true,
+          },
+          {
+            type: "slider",
+            yAxisIndex: 0,
+            right: 10,
+            width: 10,
+            top: 22,
+            bottom: 64,
+            startValue: 0,
+            endValue,
+          },
+        ],
+        series: [
+          {
+            type: "bar",
+            data: values,
+            barWidth: 3,
+            itemStyle: { color: "#9ec8ac" },
+            emphasis: { disabled: true },
+            markLine: {
+              symbol: "none",
+              label: { show: false },
+              lineStyle: { color: "#94a590", type: "dashed", width: 1 },
+              data: [{ xAxis: q25 }, { xAxis: medianPrice }, { xAxis: q75 }],
+            },
+            z: 1,
+          },
+          {
+            type: "scatter",
+            data: values,
+            symbolSize: 9,
+            itemStyle: { color: "#d06f3b", borderColor: "#fff", borderWidth: 1.2 },
+            z: 3,
+          },
+        ],
+      },
+      true
+    );
+  }
+
   function renderFocusRanking(corrData) {
     const focus = state.corrFocusItem;
     if (!focus) {
@@ -735,6 +865,7 @@
     renderTrendChart(periodRows);
     renderComboChart(periodRows);
     renderCorrelationTables(periodRows);
+    renderUnitPriceLollipop(periodRows);
     setStatus(`表示期間: 直近 ${state.periodDays} 日 | データ件数: ${periodRows.length}`);
   }
 
@@ -783,6 +914,7 @@
     window.addEventListener("resize", () => {
       trendChart.resize();
       comboChart.resize();
+      unitPriceChart.resize();
     });
   }
 
