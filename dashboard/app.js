@@ -26,6 +26,7 @@
   const trendChart = echarts.init(document.getElementById("trendChart"));
   const comboChart = echarts.init(document.getElementById("comboChart"));
   const VISITOR_ID_KEY = "agri_dashboard_visitor_id";
+  const SELECTOR_PREFS_KEY = "agri_dashboard_selector_prefs_v1";
 
   function setStatus(message) {
     statusEl.textContent = message;
@@ -125,6 +126,45 @@
       return "";
     }
     return String(message).replace(/\s+/g, " ").slice(0, 200);
+  }
+
+  function loadSelectorPrefs() {
+    try {
+      const raw = localStorage.getItem(SELECTOR_PREFS_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") {
+        return;
+      }
+      if (Array.isArray(parsed.trendItems)) {
+        state.trendItems = parsed.trendItems.filter((v) => typeof v === "string");
+      }
+      if (typeof parsed.focusItem === "string") {
+        state.focusItem = parsed.focusItem;
+      }
+      if (typeof parsed.corrFocusItem === "string") {
+        state.corrFocusItem = parsed.corrFocusItem;
+      }
+    } catch (_) {
+      // No-op: local preference loading should not block UI rendering.
+    }
+  }
+
+  function saveSelectorPrefs() {
+    try {
+      localStorage.setItem(
+        SELECTOR_PREFS_KEY,
+        JSON.stringify({
+          trendItems: state.trendItems,
+          focusItem: state.focusItem,
+          corrFocusItem: state.corrFocusItem,
+        })
+      );
+    } catch (_) {
+      // No-op: local preference saving should not block UI rendering.
+    }
   }
 
   async function logUsageEvent(client, payload) {
@@ -307,6 +347,7 @@
       state.corrFocusItem = orderedItems[0] || "";
     }
     corrFocusItemEl.value = state.corrFocusItem;
+    saveSelectorPrefs();
   }
 
   function renderKpiCards(periodRows) {
@@ -718,17 +759,20 @@
       const selected = Array.from(trendItemsEl.selectedOptions).map((opt) => opt.value);
       if (selected.length) {
         state.trendItems = selected;
+        saveSelectorPrefs();
         renderAll();
       }
     });
 
     focusItemEl.addEventListener("change", () => {
       state.focusItem = focusItemEl.value;
+      saveSelectorPrefs();
       renderAll();
     });
 
     corrFocusItemEl.addEventListener("change", () => {
       state.corrFocusItem = corrFocusItemEl.value;
+      saveSelectorPrefs();
       renderAll();
     });
 
@@ -749,6 +793,7 @@
     }
 
     attachEvents();
+    loadSelectorPrefs();
     setStatus("Supabaseからデータを取得中...");
 
     try {
