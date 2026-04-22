@@ -250,6 +250,15 @@ h2 {
   height: 400px;
 }
 
+.chart-unit {
+  height: 640px;
+  margin-top: 4px;
+}
+
+.section-subheading {
+  margin-top: 14px;
+}
+
 .table-toolbar {
   display: flex;
   gap: 10px;
