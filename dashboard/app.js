@@ -18,6 +18,7 @@
   const corrMetaLabelEl = document.getElementById("corrMetaLabel");
   const unitPriceMetaLabelEl = document.getElementById("unitPriceMetaLabel");
   const weeklyMapMetaLabelEl = document.getElementById("weeklyMapMetaLabel");
+  const weeklyMapNoticeEl = document.getElementById("weeklyMapNotice");
   const corrTopPairsBodyEl = document.getElementById("corrTopPairsBody");
   const corrBottomPairsBodyEl = document.getElementById("corrBottomPairsBody");
   const corrFocusRankingBodyEl = document.getElementById("corrFocusRankingBody");
@@ -559,6 +560,7 @@
     renderTrendChips();
     syncTrendOptions();
     renderTrendChart(state.periodRows);
+    renderWeeklyMap();
   }
 
   function ensureSelectors(periodRows) {
@@ -1197,6 +1199,7 @@
     const latestDate = getLatestDate(state.rows);
     if (!latestDate) {
       weeklyMapMetaLabelEl.textContent = "";
+      weeklyMapNoticeEl.hidden = true;
       weeklyMapChart.clear();
       return;
     }
@@ -1228,9 +1231,21 @@
       });
     });
     points.sort((a, b) => b.total - a.total);
-    const shown = points.slice(0, topN);
+    // 2軸グラフ・品目別価格推移で選択中の品目は、入荷量の順位に関係なく必ず表示する
+    const selectedItems = [...new Set([state.focusItem, ...state.trendItems].filter(Boolean))];
+    const selectedSet = new Set(selectedItems);
+    const topPoints = points.slice(0, topN);
+    const topSet = new Set(topPoints.map((p) => p.item_name));
+    const extraPoints = points.filter((p) => selectedSet.has(p.item_name) && !topSet.has(p.item_name));
+    const shown = [...topPoints, ...extraPoints];
+    const shownSet = new Set(shown.map((p) => p.item_name));
+    const missing = selectedItems.filter((item) => !shownSet.has(item));
 
-    weeklyMapMetaLabelEl.textContent = `直近7日（${formatYmd(recentStart)}〜${formatYmd(latestDate)}） vs 前の7日（${formatYmd(priorStart)}〜${formatYmd(priorEnd)}） | 入荷量上位${shown.length}品目`;
+    weeklyMapMetaLabelEl.textContent = `直近7日（${formatYmd(recentStart)}〜${formatYmd(latestDate)}） vs 前の7日（${formatYmd(priorStart)}〜${formatYmd(priorEnd)}） | 入荷量上位${topPoints.length}品目${extraPoints.length ? `＋選択中の${extraPoints.length}品目` : ""}`;
+    weeklyMapNoticeEl.textContent = missing.length
+      ? `選択中の${missing.join("、")}は、どちらかの7日間に入荷がないため表示できません。`
+      : "";
+    weeklyMapNoticeEl.hidden = !missing.length;
 
     if (!shown.length) {
       weeklyMapChart.setOption(
@@ -1247,7 +1262,7 @@
       return;
     }
 
-    const niceMax = (values) => Math.ceil((Math.max(10, ...values.map(Math.abs)) * 1.15) / 10) * 10;
+    const niceMax = (values) => Math.ceil((Math.max(10, ...values.map(Math.abs)) * 1.15) / 20) * 20;
     const xMax = niceMax(shown.map((p) => p.qtyChange));
     const yMax = niceMax(shown.map((p) => p.priceChange));
     const maxTotal = Math.max(...shown.map((p) => p.total));
@@ -1262,9 +1277,34 @@
         .slice(0, labelCount)
         .map((p) => p.item_name)
     );
-    labeled.add(state.focusItem);
+    selectedItems.forEach((item) => labeled.add(item));
 
     const fmtPct = (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
+    const toMapPoint = (d) => {
+      const isFocus = d.item_name === state.focusItem;
+      const trendIdx = state.trendItems.indexOf(d.item_name);
+      const isSelected = isFocus || trendIdx >= 0;
+      return {
+        name: d.item_name,
+        value: [d.qtyChange, d.priceChange],
+        point: d,
+        symbolSize: 8 + 16 * Math.sqrt(d.total / maxTotal),
+        // オレンジ: 2軸グラフの品目 / 線と同じ色: 品目別価格推移の品目 / 灰色: その他
+        itemStyle: isFocus
+          ? { color: "#d06f3b", borderColor: "#7a3514", borderWidth: 2, opacity: 1 }
+          : isSelected
+            ? { color: trendColor(trendIdx), borderColor: "#fff", borderWidth: 1.5, opacity: 0.95 }
+            : { color: "#a3b0a1", opacity: 0.6 },
+        label: {
+          show: labeled.has(d.item_name),
+          formatter: "{b}",
+          position: "top",
+          color: isFocus ? "#b0552a" : isSelected ? "#1f2d20" : "#5b6c5a",
+          fontSize: 11,
+          fontWeight: isSelected ? 700 : 400,
+        },
+      };
+    };
 
     weeklyMapChart.setOption(
       {
@@ -1288,6 +1328,8 @@
           type: "value",
           min: -xMax,
           max: xMax,
+          // スマホ幅でラベルが詰まらないよう横軸は目盛りを少なめに
+          interval: xMax / 2,
           name: "入荷量 前週比",
           nameLocation: "middle",
           nameGap: 30,
@@ -1299,6 +1341,7 @@
           type: "value",
           min: -yMax,
           max: yMax,
+          interval: yMax / 4,
           name: "中値 前週比",
           nameLocation: "middle",
           nameGap: 40,
@@ -1329,31 +1372,21 @@
             },
             z: 1,
           },
+          // 選択外の品目（重なったラベルは隠す）
           {
             type: "scatter",
             cursor: "pointer",
             labelLayout: { hideOverlap: true },
-            data: shown.map((d) => {
-              const isFocus = d.item_name === state.focusItem;
-              return {
-                name: d.item_name,
-                value: [d.qtyChange, d.priceChange],
-                point: d,
-                symbolSize: 8 + 16 * Math.sqrt(d.total / maxTotal),
-                itemStyle: isFocus
-                  ? { color: "#d06f3b", borderColor: "#fff", borderWidth: 1.5, opacity: 1 }
-                  : { color: "#5470c6", opacity: 0.7 },
-                label: {
-                  show: labeled.has(d.item_name),
-                  formatter: "{b}",
-                  position: "top",
-                  color: isFocus ? "#b0552a" : "#2e3f2f",
-                  fontSize: 11,
-                  fontWeight: isFocus ? 700 : 400,
-                },
-                z: isFocus ? 3 : 2,
-              };
-            }),
+            data: shown.filter((d) => !selectedSet.has(d.item_name)).map(toMapPoint),
+            z: 2,
+          },
+          // 選択中の品目（ラベルは常に表示）
+          {
+            type: "scatter",
+            cursor: "pointer",
+            labelLayout: { moveOverlap: "shiftY" },
+            data: shown.filter((d) => selectedSet.has(d.item_name)).map(toMapPoint),
+            z: 3,
           },
         ],
       },
