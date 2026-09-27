@@ -407,6 +407,46 @@
     return latestRows.map((r) => r.item_name);
   }
 
+  // 品目の並び替え・検索用の読み（漢字表記のみ）。長い語から順に置換するため、
+  // 「島バナナ」のような複合名は「島」+「バナナ」として読める。
+  // ここにない漢字を含む品目は候補リストの末尾に並ぶので、見つけたら追記する。
+  const KANJI_READINGS = {
+    大根: "だいこん", 人参: "にんじん", 白菜: "はくさい", 玉葱: "たまねぎ", 玉: "たま", 葱: "ねぎ",
+    胡瓜: "きゅうり", 茄子: "なす", 南瓜: "かぼちゃ", 冬瓜: "とうがん", 牛蒡: "ごぼう", 生姜: "しょうが",
+    大蒜: "にんにく", 里芋: "さといも", 田芋: "たいも", 紅芋: "べにいも", 甘藷: "かんしょ",
+    馬鈴薯: "ばれいしょ", 薩摩芋: "さつまいも", 山芋: "やまいも", 長芋: "ながいも", 芋: "いも",
+    青梗菜: "ちんげんさい", 小松菜: "こまつな", 水菜: "みずな", 春菊: "しゅんぎく", 法蓮草: "ほうれんそう",
+    菠薐草: "ほうれんそう", 草: "そう", 分葱: "わけぎ", 韮: "にら", 蓮根: "れんこん", 筍: "たけのこ",
+    枝豆: "えだまめ", 豆: "まめ", 隠元: "いんげん", 蕪: "かぶ", 大葉: "おおば", 紫蘇: "しそ",
+    三つ葉: "みつば", 芹: "せり", 芥子菜: "からしな", 菜: "な", 長命草: "ちょうめいそう",
+    唐辛子: "とうがらし", 落花生: "らっかせい", 西瓜: "すいか", 蜜柑: "みかん", 林檎: "りんご",
+    梨: "なし", 苺: "いちご", 桃: "もも", 柿: "かき", 葡萄: "ぶどう", 甘夏: "あまなつ", 檸檬: "れもん",
+    島: "しま", 紅: "べに", 赤: "あか", 青: "あお", 白: "しろ", 黄: "き", 黒: "くろ", 紫: "むらさき",
+    新: "しん", 小: "こ", 大: "おお", 長: "なが", 丸: "まる", 花: "はな", 実: "み", 葉: "は", 生: "なま",
+  };
+  const KANJI_READING_KEYS = Object.keys(KANJI_READINGS).sort((a, b) => b.length - a.length);
+  const KANJI_PATTERN = /[\u3400-\u9fff]/;
+  const jaCollator = new Intl.Collator("ja");
+
+  function itemReading(name) {
+    let reading = String(name).normalize("NFKC");
+    KANJI_READING_KEYS.forEach((kanji) => {
+      reading = reading.split(kanji).join(KANJI_READINGS[kanji]);
+    });
+    return reading;
+  }
+
+  // あいうえお順（読みの分からない漢字を含む品目は末尾）
+  function sortItemsByReading(items) {
+    return items
+      .map((name) => {
+        const reading = itemReading(name);
+        return { name, reading, unknown: KANJI_PATTERN.test(reading) };
+      })
+      .sort((a, b) => a.unknown - b.unknown || jaCollator.compare(a.reading, b.reading) || jaCollator.compare(a.name, b.name))
+      .map((x) => x.name);
+  }
+
   function toKatakana(value) {
     return value.replace(/[\u3041-\u3096]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
   }
@@ -464,7 +504,7 @@
     clearChildren(trendOptionsEl);
     orderedItems.forEach((item) => {
       const li = document.createElement("li");
-      li.dataset.search = normalizeForSearch(item);
+      li.dataset.search = `${normalizeForSearch(item)}|${normalizeForSearch(itemReading(item))}`;
       const label = document.createElement("label");
       label.className = "item-option";
       const cb = document.createElement("input");
@@ -508,11 +548,13 @@
   function ensureSelectors(periodRows) {
     const items = Array.from(new Set(periodRows.map((r) => r.item_name)));
     const ranked = getItemCandidates(periodRows).filter((item) => items.includes(item));
+    // 初期選択は入荷量の多い順、選択候補の表示はあいうえお順
     const orderedItems = [...ranked, ...items.filter((i) => !ranked.includes(i))];
+    const sortedItems = sortItemsByReading(orderedItems);
 
     clearChildren(focusItemEl);
     clearChildren(corrFocusItemEl);
-    orderedItems.forEach((item) => {
+    sortedItems.forEach((item) => {
       appendOption(focusItemEl, item, item);
       appendOption(corrFocusItemEl, item, item);
     });
@@ -526,7 +568,7 @@
         state.trendItems = orderedItems.slice(0, defaultTrendCount);
       }
     }
-    buildTrendOptions(orderedItems);
+    buildTrendOptions(sortedItems);
     renderTrendChips();
 
     if (!state.focusItem || !orderedItems.includes(state.focusItem)) {
