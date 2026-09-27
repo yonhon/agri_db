@@ -8,6 +8,7 @@
   const trendItemsEl = document.getElementById("trendItems");
   const focusItemEl = document.getElementById("focusItem");
   const corrFocusItemEl = document.getElementById("corrFocusItem");
+  const corrSectionEl = document.getElementById("corrSection");
   const corrMetaLabelEl = document.getElementById("corrMetaLabel");
   const unitPriceMetaLabelEl = document.getElementById("unitPriceMetaLabel");
   const corrTopPairsBodyEl = document.getElementById("corrTopPairsBody");
@@ -19,6 +20,7 @@
   const state = {
     rows: [],
     seriesByItem: new Map(),
+    // 0 = 全期間
     periodDays: Number(config.defaultDays) || 30,
     trendItems: [],
     focusItem: "",
@@ -309,9 +311,24 @@
     return rows.length ? rows[rows.length - 1].sale_date : null;
   }
 
+  function parsePeriodDays(value) {
+    if (value === "all") {
+      return 0;
+    }
+    const days = Number(value);
+    return Number.isFinite(days) && days > 0 ? days : null;
+  }
+
+  function periodLabel(periodDays) {
+    return periodDays > 0 ? `直近 ${periodDays} 日` : "全期間";
+  }
+
   function filterRowsByPeriod(rows, periodDays) {
     if (!rows.length) {
       return [];
+    }
+    if (!(periodDays > 0)) {
+      return rows;
     }
     const latest = parseISODate(getLatestDate(rows));
     const cutoff = new Date(latest);
@@ -955,7 +972,7 @@
     renderPairTable(corrBottomPairsBodyEl, bottom, "表示可能な相関ペアがありません。");
     renderFocusRanking(corrData);
 
-    corrMetaLabelEl.textContent = `期間: 直近 ${state.periodDays} 日 | 最低共通日数: ${corrData.minOverlap} 日 | ペア数: ${corrData.pairs.length}`;
+    corrMetaLabelEl.textContent = `期間: ${periodLabel(state.periodDays)} | 最低共通日数: ${corrData.minOverlap} 日 | ペア数: ${corrData.pairs.length}`;
   }
 
   function renderAll() {
@@ -964,20 +981,22 @@
     renderKpiCards(periodRows);
     renderTrendChart(periodRows);
     renderComboChart(periodRows);
-    renderCorrelationTables(periodRows);
+    if (!corrSectionEl.hidden) {
+      renderCorrelationTables(periodRows);
+    }
     renderUnitPriceLollipop(periodRows);
-    setStatus(`表示期間: 直近 ${state.periodDays} 日 | データ件数: ${periodRows.length}`);
+    setStatus(`表示期間: ${periodLabel(state.periodDays)} | データ件数: ${periodRows.length}`);
   }
 
   function attachEvents() {
     periodButtons.forEach((b) => {
-      b.classList.toggle("is-active", Number(b.dataset.days) === state.periodDays);
+      b.classList.toggle("is-active", parsePeriodDays(b.dataset.days) === state.periodDays);
     });
 
     periodButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
-        const days = Number(btn.dataset.days);
-        if (!Number.isFinite(days) || days <= 0) {
+        const days = parsePeriodDays(btn.dataset.days);
+        if (days == null) {
           return;
         }
         state.periodDays = days;
