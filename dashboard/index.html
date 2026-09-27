@@ -2,7 +2,7 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
     <title>沖縄市況ダッシュボード</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -52,8 +52,32 @@
             <h2>品目別価格推移</h2>
             <p class="muted">複数選択可</p>
           </div>
-          <label class="field-label" for="trendItems">表示品目</label>
-          <select id="trendItems" class="field field-multi" multiple></select>
+          <span id="trendItemsLabel" class="field-label">表示品目</span>
+          <div class="chip-picker" role="group" aria-labelledby="trendItemsLabel">
+            <ul id="trendChips" class="chip-list"></ul>
+            <button type="button" id="trendAddBtn" class="chip-add">＋ 品目を追加</button>
+          </div>
+          <dialog id="trendDialog" class="item-sheet" aria-labelledby="trendDialogTitle">
+            <form method="dialog" class="item-sheet-inner">
+              <div class="item-sheet-head">
+                <h3 id="trendDialogTitle" tabindex="-1" autofocus>表示品目を選択</h3>
+                <span id="trendSelCount" class="muted"></span>
+              </div>
+              <input
+                type="search"
+                id="trendSearch"
+                class="field"
+                placeholder="品目名で検索（ひらがな可）"
+                aria-label="品目名で検索"
+                autocomplete="off"
+              />
+              <ul id="trendOptions" class="item-options"></ul>
+              <p id="trendNoMatch" class="muted item-no-match" hidden>該当する品目がありません。</p>
+              <div class="item-sheet-foot">
+                <button type="submit" class="primary-btn">完了</button>
+              </div>
+            </form>
+          </dialog>
           <div id="trendChart" class="chart chart-mid"></div>
         </article>
 
