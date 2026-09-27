@@ -231,6 +231,10 @@
       if (typeof parsed.corrFocusItem === "string") {
         state.corrFocusItem = parsed.corrFocusItem;
       }
+      // 期間ボタンにある値（0 = 全期間）のときだけ復元する
+      if (periodButtons.some((b) => parsePeriodDays(b.dataset.days) === parsed.periodDays)) {
+        state.periodDays = parsed.periodDays;
+      }
     } catch (_) {
       // No-op: local preference loading should not block UI rendering.
     }
@@ -244,6 +248,7 @@
           trendItems: state.trendItems,
           focusItem: state.focusItem,
           corrFocusItem: state.corrFocusItem,
+          periodDays: state.periodDays,
         })
       );
     } catch (_) {
@@ -1433,6 +1438,7 @@
         }
         state.periodDays = days;
         periodButtons.forEach((b) => b.classList.toggle("is-active", b === btn));
+        saveSelectorPrefs();
         renderAll();
       });
     });
@@ -1507,9 +1513,10 @@
       return;
     }
 
+    // 期間ボタンの初期表示に反映するため、イベント登録より先に復元する
+    loadSelectorPrefs();
     attachEvents();
     await renderRecentUpdates();
-    loadSelectorPrefs();
     setStatus("Supabaseからデータを取得中...");
 
     try {
