@@ -93,15 +93,18 @@
       </section>
 
       <section class="panel panel-full">
-        <div class="panel-heading">
+        <div class="panel-heading panel-heading-stacked">
           <h2>入荷量 × 販売価格中値 前週比マップ</h2>
           <p id="weeklyMapMetaLabel" class="muted"></p>
         </div>
+        <p id="weeklyMapNotice" class="chart-notice" hidden></p>
         <p class="muted chart-note">
           <span class="quad-chip quad-up">左上: 品薄で値上がり</span>
           <span class="quad-chip quad-down">右下: 出回り増で値下がり</span>
         </p>
-        <p class="muted chart-note">点の大きさは入荷量。タップすると「入荷量 × 価格（2軸）」の対象品目が切り替わります（オレンジが選択中）。</p>
+        <p class="muted chart-note">
+          点の大きさは入荷量。<b class="map-key map-key-focus">●</b>オレンジは「入荷量 × 価格（2軸）」の品目、線と同じ色の点は「品目別価格推移」で表示中の品目です（入荷量の順位に関係なく表示）。タップすると2軸グラフの品目が切り替わります。
+        </p>
         <div id="weeklyMapChart" class="chart chart-map"></div>
       </section>
 
