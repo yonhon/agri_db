@@ -2,7 +2,7 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
     <title>沖縄市況ダッシュボード</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -32,6 +32,7 @@
             <button class="period-btn is-active" data-days="7">7日</button>
             <button class="period-btn" data-days="30">30日</button>
             <button class="period-btn" data-days="90">90日</button>
+            <button class="period-btn" data-days="all">全期間</button>
           </div>
           <button id="reloadBtn" class="reload-btn">更新</button>
         </div>
@@ -51,8 +52,32 @@
             <h2>品目別価格推移</h2>
             <p class="muted">複数選択可</p>
           </div>
-          <label class="field-label" for="trendItems">表示品目</label>
-          <select id="trendItems" class="field field-multi" multiple></select>
+          <span id="trendItemsLabel" class="field-label">表示品目</span>
+          <div class="chip-picker" role="group" aria-labelledby="trendItemsLabel">
+            <ul id="trendChips" class="chip-list"></ul>
+            <button type="button" id="trendAddBtn" class="chip-add">＋ 品目を追加</button>
+          </div>
+          <dialog id="trendDialog" class="item-sheet" aria-labelledby="trendDialogTitle">
+            <form method="dialog" class="item-sheet-inner">
+              <div class="item-sheet-head">
+                <h3 id="trendDialogTitle" tabindex="-1" autofocus>表示品目を選択</h3>
+                <span id="trendSelCount" class="muted"></span>
+              </div>
+              <input
+                type="search"
+                id="trendSearch"
+                class="field"
+                placeholder="品目名で検索（ひらがな可）"
+                aria-label="品目名で検索"
+                autocomplete="off"
+              />
+              <ul id="trendOptions" class="item-options"></ul>
+              <p id="trendNoMatch" class="muted item-no-match" hidden>該当する品目がありません。</p>
+              <div class="item-sheet-foot">
+                <button type="submit" class="primary-btn">完了</button>
+              </div>
+            </form>
+          </dialog>
           <div id="trendChart" class="chart chart-mid"></div>
         </article>
 
@@ -68,80 +93,83 @@
       </section>
 
       <section class="panel panel-full">
+        <!-- 相関分析は一時的に非表示。再表示するには hidden 属性を外す。 -->
+        <div id="corrSection" hidden>
+          <div class="panel-heading">
+            <h2>品目間価格変動率の相関分析</h2>
+            <p id="corrMetaLabel" class="muted"></p>
+          </div>
+          <div class="corr-legend" aria-label="相関スコア区分">
+            <span class="legend-chip score-band-1">非常に強い逆相関</span>
+            <span class="legend-chip score-band-2">強い逆相関</span>
+            <span class="legend-chip score-band-3">中程度の逆相関</span>
+            <span class="legend-chip score-band-4">弱い逆相関</span>
+            <span class="legend-chip score-band-5">ほぼ無相関</span>
+            <span class="legend-chip score-band-6">弱い相関</span>
+            <span class="legend-chip score-band-7">中程度の相関</span>
+            <span class="legend-chip score-band-8">強い相関</span>
+            <span class="legend-chip score-band-9">非常に強い相関</span>
+          </div>
+          <div class="corr-grid">
+            <article class="subpanel">
+              <div class="panel-heading">
+                <h3>上位相関ペア Top20</h3>
+                <p class="muted">相関スコア順</p>
+              </div>
+              <div class="table-wrap">
+                <table class="corr-table">
+                  <thead>
+                    <tr>
+                      <th>順位</th>
+                      <th>品目ペア</th>
+                      <th>相関スコア</th>
+                      <th>共通日数</th>
+                    </tr>
+                  </thead>
+                  <tbody id="corrTopPairsBody"></tbody>
+                </table>
+              </div>
+            </article>
+            <article class="subpanel">
+              <div class="panel-heading">
+                <h3>下位相関ペア Top20</h3>
+                <p class="muted">逆相関順</p>
+              </div>
+              <div class="table-wrap">
+                <table class="corr-table">
+                  <thead>
+                    <tr>
+                      <th>順位</th>
+                      <th>品目ペア</th>
+                      <th>相関スコア</th>
+                      <th>共通日数</th>
+                    </tr>
+                  </thead>
+                  <tbody id="corrBottomPairsBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+          <div class="table-toolbar">
+            <label class="field-label inline" for="corrFocusItem">対象品目</label>
+            <select id="corrFocusItem" class="field field-inline-wide"></select>
+          </div>
+          <div class="table-wrap">
+            <table class="corr-table">
+              <thead>
+                <tr>
+                  <th>順位</th>
+                  <th>相手品目</th>
+                  <th>相関スコア</th>
+                  <th>共通日数</th>
+                </tr>
+              </thead>
+              <tbody id="corrFocusRankingBody"></tbody>
+            </table>
+          </div>
+        </div>
         <div class="panel-heading">
-          <h2>品目間価格変動率の相関分析</h2>
-          <p id="corrMetaLabel" class="muted"></p>
-        </div>
-        <div class="corr-legend" aria-label="相関スコア区分">
-          <span class="legend-chip score-band-1">非常に強い逆相関</span>
-          <span class="legend-chip score-band-2">強い逆相関</span>
-          <span class="legend-chip score-band-3">中程度の逆相関</span>
-          <span class="legend-chip score-band-4">弱い逆相関</span>
-          <span class="legend-chip score-band-5">ほぼ無相関</span>
-          <span class="legend-chip score-band-6">弱い相関</span>
-          <span class="legend-chip score-band-7">中程度の相関</span>
-          <span class="legend-chip score-band-8">強い相関</span>
-          <span class="legend-chip score-band-9">非常に強い相関</span>
-        </div>
-        <div class="corr-grid">
-          <article class="subpanel">
-            <div class="panel-heading">
-              <h3>上位相関ペア Top20</h3>
-              <p class="muted">相関スコア順</p>
-            </div>
-            <div class="table-wrap">
-              <table class="corr-table">
-                <thead>
-                  <tr>
-                    <th>順位</th>
-                    <th>品目ペア</th>
-                    <th>相関スコア</th>
-                    <th>共通日数</th>
-                  </tr>
-                </thead>
-                <tbody id="corrTopPairsBody"></tbody>
-              </table>
-            </div>
-          </article>
-          <article class="subpanel">
-            <div class="panel-heading">
-              <h3>下位相関ペア Top20</h3>
-              <p class="muted">逆相関順</p>
-            </div>
-            <div class="table-wrap">
-              <table class="corr-table">
-                <thead>
-                  <tr>
-                    <th>順位</th>
-                    <th>品目ペア</th>
-                    <th>相関スコア</th>
-                    <th>共通日数</th>
-                  </tr>
-                </thead>
-                <tbody id="corrBottomPairsBody"></tbody>
-              </table>
-            </div>
-          </article>
-        </div>
-        <div class="table-toolbar">
-          <label class="field-label inline" for="corrFocusItem">対象品目</label>
-          <select id="corrFocusItem" class="field field-inline-wide"></select>
-        </div>
-        <div class="table-wrap">
-          <table class="corr-table">
-            <thead>
-              <tr>
-                <th>順位</th>
-                <th>相手品目</th>
-                <th>相関スコア</th>
-                <th>共通日数</th>
-              </tr>
-            </thead>
-            <tbody id="corrFocusRankingBody"></tbody>
-          </table>
-        </div>
-        <div class="panel-heading section-subheading">
-          <h3>単価ロリポップ（7日加重平均・単価降順）</h3>
+          <h2>単価ロリポップ（7日加重平均・単価降順）</h2>
           <p id="unitPriceMetaLabel" class="muted"></p>
         </div>
         <div id="unitPriceChart" class="chart chart-unit"></div>

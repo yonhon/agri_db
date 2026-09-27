@@ -5,9 +5,16 @@
   const recentUpdatesListEl = document.getElementById("recentUpdatesList");
   const kpiCardsEl = document.getElementById("kpiCards");
   const kpiDateLabelEl = document.getElementById("kpiDateLabel");
-  const trendItemsEl = document.getElementById("trendItems");
+  const trendChipsEl = document.getElementById("trendChips");
+  const trendAddBtn = document.getElementById("trendAddBtn");
+  const trendDialogEl = document.getElementById("trendDialog");
+  const trendSearchEl = document.getElementById("trendSearch");
+  const trendOptionsEl = document.getElementById("trendOptions");
+  const trendSelCountEl = document.getElementById("trendSelCount");
+  const trendNoMatchEl = document.getElementById("trendNoMatch");
   const focusItemEl = document.getElementById("focusItem");
   const corrFocusItemEl = document.getElementById("corrFocusItem");
+  const corrSectionEl = document.getElementById("corrSection");
   const corrMetaLabelEl = document.getElementById("corrMetaLabel");
   const unitPriceMetaLabelEl = document.getElementById("unitPriceMetaLabel");
   const corrTopPairsBodyEl = document.getElementById("corrTopPairsBody");
@@ -18,7 +25,9 @@
 
   const state = {
     rows: [],
+    periodRows: [],
     seriesByItem: new Map(),
+    // 0 = 全期間
     periodDays: Number(config.defaultDays) || 30,
     trendItems: [],
     focusItem: "",
@@ -26,6 +35,8 @@
     analyticsClient: null,
   };
   const UPDATES_JSON_PATH = "./updates.json";
+  // 品目チップの色をグラフの線と一致させるため、ECharts既定パレットを明示する
+  const TREND_COLORS = ["#5470c6", "#91cc75", "#fac858", "#ee6666", "#73c0de", "#3ba272", "#fc8452", "#9a60b4", "#ea7ccc"];
 
   const trendChart = echarts.init(document.getElementById("trendChart"));
   const comboChart = echarts.init(document.getElementById("comboChart"));
@@ -309,9 +320,24 @@
     return rows.length ? rows[rows.length - 1].sale_date : null;
   }
 
+  function parsePeriodDays(value) {
+    if (value === "all") {
+      return 0;
+    }
+    const days = Number(value);
+    return Number.isFinite(days) && days > 0 ? days : null;
+  }
+
+  function periodLabel(periodDays) {
+    return periodDays > 0 ? `直近 ${periodDays} 日` : "全期間";
+  }
+
   function filterRowsByPeriod(rows, periodDays) {
     if (!rows.length) {
       return [];
+    }
+    if (!(periodDays > 0)) {
+      return rows;
     }
     const latest = parseISODate(getLatestDate(rows));
     const cutoff = new Date(latest);
@@ -381,16 +407,112 @@
     return latestRows.map((r) => r.item_name);
   }
 
+  function toKatakana(value) {
+    return value.replace(/[\u3041-\u3096]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
+  }
+
+  function normalizeForSearch(value) {
+    return toKatakana(String(value).normalize("NFKC").toLowerCase()).replace(/\s+/g, "");
+  }
+
+  function trendColor(index) {
+    return TREND_COLORS[index % TREND_COLORS.length];
+  }
+
+  function renderTrendChips() {
+    clearChildren(trendChipsEl);
+    const removable = state.trendItems.length > 1;
+    state.trendItems.forEach((item, idx) => {
+      const li = document.createElement("li");
+      li.className = "chip";
+      li.style.setProperty("--chip-color", trendColor(idx));
+
+      const dot = document.createElement("span");
+      dot.className = "chip-dot";
+      dot.setAttribute("aria-hidden", "true");
+      li.appendChild(dot);
+
+      const label = document.createElement("span");
+      label.className = "chip-label";
+      label.textContent = item;
+      li.appendChild(label);
+
+      if (removable) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "chip-remove";
+        btn.dataset.item = item;
+        btn.setAttribute("aria-label", `${item}を外す`);
+        btn.textContent = "×";
+        li.appendChild(btn);
+      }
+      trendChipsEl.appendChild(li);
+    });
+  }
+
+  function syncTrendOptions() {
+    const lastOne = state.trendItems.length <= 1;
+    Array.from(trendOptionsEl.querySelectorAll("input[type=checkbox]")).forEach((cb) => {
+      cb.checked = state.trendItems.includes(cb.value);
+      // 最低1品目は残す
+      cb.disabled = lastOne && cb.checked;
+    });
+    trendSelCountEl.textContent = `${state.trendItems.length}品目を選択中`;
+  }
+
+  function buildTrendOptions(orderedItems) {
+    clearChildren(trendOptionsEl);
+    orderedItems.forEach((item) => {
+      const li = document.createElement("li");
+      li.dataset.search = normalizeForSearch(item);
+      const label = document.createElement("label");
+      label.className = "item-option";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = item;
+      label.appendChild(cb);
+      const text = document.createElement("span");
+      text.textContent = item;
+      label.appendChild(text);
+      li.appendChild(label);
+      trendOptionsEl.appendChild(li);
+    });
+    syncTrendOptions();
+    applyTrendSearch();
+  }
+
+  function applyTrendSearch() {
+    const query = normalizeForSearch(trendSearchEl.value);
+    let visible = 0;
+    Array.from(trendOptionsEl.children).forEach((li) => {
+      const match = !query || li.dataset.search.includes(query);
+      li.hidden = !match;
+      if (match) {
+        visible += 1;
+      }
+    });
+    trendNoMatchEl.hidden = visible > 0;
+  }
+
+  function updateTrendItems(nextItems) {
+    if (!nextItems.length) {
+      return;
+    }
+    state.trendItems = nextItems;
+    saveSelectorPrefs();
+    renderTrendChips();
+    syncTrendOptions();
+    renderTrendChart(state.periodRows);
+  }
+
   function ensureSelectors(periodRows) {
     const items = Array.from(new Set(periodRows.map((r) => r.item_name)));
     const ranked = getItemCandidates(periodRows).filter((item) => items.includes(item));
     const orderedItems = [...ranked, ...items.filter((i) => !ranked.includes(i))];
 
-    clearChildren(trendItemsEl);
     clearChildren(focusItemEl);
     clearChildren(corrFocusItemEl);
     orderedItems.forEach((item) => {
-      appendOption(trendItemsEl, item, item);
       appendOption(focusItemEl, item, item);
       appendOption(corrFocusItemEl, item, item);
     });
@@ -404,9 +526,8 @@
         state.trendItems = orderedItems.slice(0, defaultTrendCount);
       }
     }
-    Array.from(trendItemsEl.options).forEach((opt) => {
-      opt.selected = state.trendItems.includes(opt.value);
-    });
+    buildTrendOptions(orderedItems);
+    renderTrendChips();
 
     if (!state.focusItem || !orderedItems.includes(state.focusItem)) {
       state.focusItem = orderedItems[0] || "";
@@ -518,6 +639,7 @@
           axisLabel: { color: "#516050", formatter: "{value}円" },
           splitLine: { lineStyle: { color: "#e7eee4" } },
         },
+        color: TREND_COLORS,
         series,
       },
       true
@@ -955,29 +1077,32 @@
     renderPairTable(corrBottomPairsBodyEl, bottom, "表示可能な相関ペアがありません。");
     renderFocusRanking(corrData);
 
-    corrMetaLabelEl.textContent = `期間: 直近 ${state.periodDays} 日 | 最低共通日数: ${corrData.minOverlap} 日 | ペア数: ${corrData.pairs.length}`;
+    corrMetaLabelEl.textContent = `期間: ${periodLabel(state.periodDays)} | 最低共通日数: ${corrData.minOverlap} 日 | ペア数: ${corrData.pairs.length}`;
   }
 
   function renderAll() {
     const periodRows = filterRowsByPeriod(state.rows, state.periodDays);
+    state.periodRows = periodRows;
     ensureSelectors(periodRows);
     renderKpiCards(periodRows);
     renderTrendChart(periodRows);
     renderComboChart(periodRows);
-    renderCorrelationTables(periodRows);
+    if (!corrSectionEl.hidden) {
+      renderCorrelationTables(periodRows);
+    }
     renderUnitPriceLollipop(periodRows);
-    setStatus(`表示期間: 直近 ${state.periodDays} 日 | データ件数: ${periodRows.length}`);
+    setStatus(`表示期間: ${periodLabel(state.periodDays)} | データ件数: ${periodRows.length}`);
   }
 
   function attachEvents() {
     periodButtons.forEach((b) => {
-      b.classList.toggle("is-active", Number(b.dataset.days) === state.periodDays);
+      b.classList.toggle("is-active", parsePeriodDays(b.dataset.days) === state.periodDays);
     });
 
     periodButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
-        const days = Number(btn.dataset.days);
-        if (!Number.isFinite(days) || days <= 0) {
+        const days = parsePeriodDays(btn.dataset.days);
+        if (days == null) {
           return;
         }
         state.periodDays = days;
@@ -986,13 +1111,40 @@
       });
     });
 
-    trendItemsEl.addEventListener("change", () => {
-      const selected = Array.from(trendItemsEl.selectedOptions).map((opt) => opt.value);
-      if (selected.length) {
-        state.trendItems = selected;
-        saveSelectorPrefs();
-        renderAll();
+    trendChipsEl.addEventListener("click", (event) => {
+      const btn = event.target.closest(".chip-remove");
+      if (!btn) {
+        return;
       }
+      updateTrendItems(state.trendItems.filter((item) => item !== btn.dataset.item));
+    });
+
+    trendAddBtn.addEventListener("click", () => {
+      trendSearchEl.value = "";
+      applyTrendSearch();
+      syncTrendOptions();
+      trendDialogEl.showModal();
+      trendOptionsEl.scrollTop = 0;
+    });
+
+    // 背景（ダイアログ外）タップで閉じる
+    trendDialogEl.addEventListener("click", (event) => {
+      if (event.target === trendDialogEl) {
+        trendDialogEl.close();
+      }
+    });
+
+    trendSearchEl.addEventListener("input", applyTrendSearch);
+
+    trendOptionsEl.addEventListener("change", (event) => {
+      const cb = event.target;
+      if (!(cb instanceof HTMLInputElement) || cb.type !== "checkbox") {
+        return;
+      }
+      const next = cb.checked
+        ? [...state.trendItems.filter((item) => item !== cb.value), cb.value]
+        : state.trendItems.filter((item) => item !== cb.value);
+      updateTrendItems(next);
     });
 
     focusItemEl.addEventListener("change", () => {
