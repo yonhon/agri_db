@@ -734,7 +734,8 @@
         animationDuration: 400,
         tooltip: { trigger: "axis" },
         legend: { top: 0, type: "scroll" },
-        grid: { left: 48, right: 22, top: 36, bottom: 44 },
+        // 軸ラベルの桁数に合わせて余白を自動調整する
+        grid: { left: 8, right: 22, top: 36, bottom: 8, containLabel: true },
         xAxis: { type: "category", data: dates.map(formatYmd), axisLabel: { color: "#516050" } },
         yAxis: {
           type: "value",
@@ -758,7 +759,7 @@
         animationDuration: 400,
         tooltip: { trigger: "axis" },
         legend: { top: 0, data: ["入荷量", "販売価格中値"] },
-        grid: { left: 48, right: 52, top: 36, bottom: 44 },
+        grid: { left: 8, right: 8, top: 44, bottom: 8, containLabel: true },
         xAxis: { type: "category", data: xData, axisLabel: { color: "#516050" } },
         yAxis: [
           {
