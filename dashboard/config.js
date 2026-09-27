@@ -4,4 +4,8 @@ window.DASHBOARD_CONFIG = {
   defaultDays: 30,
   trendDefaultItems: 6,
   corrMinOverlapDays: 30,
+  kpiBaselineDays: 14,
+  kpiMinBaselineDays: 7,
+  weeklyMapTopItems: 20,
+  weeklyMapLabelItems: 6,
 };

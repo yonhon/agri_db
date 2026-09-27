@@ -17,6 +17,7 @@
   const corrSectionEl = document.getElementById("corrSection");
   const corrMetaLabelEl = document.getElementById("corrMetaLabel");
   const unitPriceMetaLabelEl = document.getElementById("unitPriceMetaLabel");
+  const weeklyMapMetaLabelEl = document.getElementById("weeklyMapMetaLabel");
   const corrTopPairsBodyEl = document.getElementById("corrTopPairsBody");
   const corrBottomPairsBodyEl = document.getElementById("corrBottomPairsBody");
   const corrFocusRankingBodyEl = document.getElementById("corrFocusRankingBody");
@@ -40,6 +41,7 @@
 
   const trendChart = echarts.init(document.getElementById("trendChart"));
   const comboChart = echarts.init(document.getElementById("comboChart"));
+  const weeklyMapChart = echarts.init(document.getElementById("weeklyMapChart"));
   const unitPriceChart = echarts.init(document.getElementById("unitPriceChart"));
   const VISITOR_ID_KEY = "agri_dashboard_visitor_id";
   const SELECTOR_PREFS_KEY = "agri_dashboard_selector_prefs_v1";
@@ -385,6 +387,7 @@
           sale_date: r.sale_date,
           item_name: r.item_name,
           quantity: asNumber(r.quantity),
+          // avg_price はPDFの「中値」列（販売価格中値）
           avg_price: asNumber(r.avg_price),
           high_price: asNumber(r.high_price),
           low_price: asNumber(r.low_price),
@@ -596,39 +599,64 @@
     saveSelectorPrefs();
   }
 
-  function renderKpiCards(periodRows) {
-    const latestDate = getLatestDate(periodRows);
+  function shiftYmd(ymd, days) {
+    const d = parseISODate(ymd);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function isPositive(value) {
+    return Number.isFinite(value) && value > 0;
+  }
+
+  // 本日の販売価格中値を、同じ品目の過去N日（本日を含まない）の中値の中央値と比べる。
+  // 表示期間の切り替えとは連動せず、常に全データの最新日を基準にする。
+  function renderKpiCards() {
+    const latestDate = getLatestDate(state.rows);
     if (!latestDate) {
       clearChildren(kpiCardsEl);
       kpiDateLabelEl.textContent = "";
       return;
     }
 
-    const latestRows = periodRows.filter((r) => r.sale_date === latestDate);
-    const changes = [];
+    const baseDays = Number(config.kpiBaselineDays) || 14;
+    const minBaseDays = Number(config.kpiMinBaselineDays) || 7;
+    document.getElementById("kpiBaseDays").textContent = String(baseDays);
+    const baseStart = shiftYmd(latestDate, -baseDays);
+    const baseEnd = shiftYmd(latestDate, -1);
+    const deviations = [];
 
-    latestRows.forEach((row) => {
-      const series = state.seriesByItem.get(row.item_name) || [];
-      const idx = series.findIndex((x) => x.sale_date === latestDate);
-      if (idx <= 0) {
+    state.seriesByItem.forEach((series, itemName) => {
+      const today = series.find((r) => r.sale_date === latestDate);
+      if (!today || !isPositive(today.avg_price) || !isPositive(today.quantity)) {
         return;
       }
-      const prev = series[idx - 1];
-      if (!prev || prev.avg_price == null || prev.avg_price === 0 || row.avg_price == null) {
+      const baseRows = series.filter(
+        (r) => r.sale_date >= baseStart && r.sale_date <= baseEnd && isPositive(r.avg_price)
+      );
+      if (baseRows.length < minBaseDays) {
         return;
       }
-      const changeRate = ((row.avg_price - prev.avg_price) / prev.avg_price) * 100;
-      changes.push({
-        item_name: row.item_name,
-        current: row.avg_price,
-        previous: prev.avg_price,
-        changeRate,
+      const baseline = median(baseRows.map((r) => r.avg_price));
+      const idx = series.indexOf(today);
+      const prev = idx > 0 ? series[idx - 1] : null;
+      deviations.push({
+        item_name: itemName,
+        current: today.avg_price,
+        baseline,
+        deviation: ((today.avg_price - baseline) / baseline) * 100,
+        dayChange: prev && isPositive(prev.avg_price) ? ((today.avg_price - prev.avg_price) / prev.avg_price) * 100 : null,
       });
     });
 
-    changes.sort((a, b) => b.changeRate - a.changeRate);
-    const top = changes.slice(0, 3);
-    const bottom = [...changes].sort((a, b) => a.changeRate - b.changeRate).slice(0, 3);
+    const high = deviations
+      .filter((d) => d.deviation > 0)
+      .sort((a, b) => b.deviation - a.deviation)
+      .slice(0, 3);
+    const low = deviations
+      .filter((d) => d.deviation < 0)
+      .sort((a, b) => a.deviation - b.deviation)
+      .slice(0, 3);
 
     clearChildren(kpiCardsEl);
     const appendCard = (d, index, type) => {
@@ -637,7 +665,7 @@
 
       const rank = document.createElement("div");
       rank.className = "kpi-rank";
-      rank.textContent = `${type === "up" ? "上昇" : "下落"} ${index + 1}`;
+      rank.textContent = `${type === "up" ? "割高" : "割安"} ${index + 1}`;
       article.appendChild(rank);
 
       const item = document.createElement("div");
@@ -647,20 +675,32 @@
 
       const rate = document.createElement("div");
       rate.className = `kpi-rate ${type}`;
-      rate.textContent = fmtRate(d.changeRate);
+      rate.textContent = fmtRate(d.deviation);
       article.appendChild(rate);
 
-      const sub = document.createElement("div");
-      sub.className = "kpi-sub";
-      sub.textContent = `${fmtPrice(d.current)} / 前日 ${fmtPrice(d.previous)}`;
-      article.appendChild(sub);
+      [
+        ["kpi-sub", `本日 ${fmtPrice(d.current)}`],
+        ["kpi-sub", `${baseDays}日中央値 ${fmtPrice(d.baseline)}`],
+        ["kpi-sub kpi-sub-minor", `前日比 ${d.dayChange == null ? "-" : fmtRate(d.dayChange)}`],
+      ].forEach(([className, text]) => {
+        const sub = document.createElement("div");
+        sub.className = className;
+        sub.textContent = text;
+        article.appendChild(sub);
+      });
 
       kpiCardsEl.appendChild(article);
     };
 
-    top.forEach((d, i) => appendCard(d, i, "up"));
-    bottom.forEach((d, i) => appendCard(d, i, "down"));
-    kpiDateLabelEl.textContent = `基準日: ${latestDate}`;
+    high.forEach((d, i) => appendCard(d, i, "up"));
+    low.forEach((d, i) => appendCard(d, i, "down"));
+    if (!high.length && !low.length) {
+      const p = document.createElement("p");
+      p.className = "muted";
+      p.textContent = "比較できる品目がありません。";
+      kpiCardsEl.appendChild(p);
+    }
+    kpiDateLabelEl.textContent = `基準日: ${latestDate} | 比較期間: ${formatYmd(baseStart)}〜${formatYmd(baseEnd)}（取引${minBaseDays}日以上の品目）`;
   }
 
   function renderTrendChart(periodRows) {
@@ -710,7 +750,7 @@
       {
         animationDuration: 400,
         tooltip: { trigger: "axis" },
-        legend: { top: 0, data: ["入荷量", "平均価格"] },
+        legend: { top: 0, data: ["入荷量", "販売価格中値"] },
         grid: { left: 48, right: 52, top: 36, bottom: 44 },
         xAxis: { type: "category", data: xData, axisLabel: { color: "#516050" } },
         yAxis: [
@@ -736,7 +776,7 @@
             data: itemRows.map((r) => r.quantity),
           },
           {
-            name: "平均価格",
+            name: "販売価格中値",
             type: "line",
             yAxisIndex: 1,
             smooth: true,
@@ -987,12 +1027,12 @@
       .sort((a, b) => (b.weighted_avg_price || 0) - (a.weighted_avg_price || 0));
 
     if (!weightedRows.length) {
-      unitPriceMetaLabelEl.textContent = `対象期間: ${windowStart}〜${latestDate} | 加重平均単価データがありません。`;
+      unitPriceMetaLabelEl.textContent = `対象期間: ${windowStart}〜${latestDate} | 販売価格中値の加重平均データがありません。`;
       unitPriceChart.setOption(
         {
           animationDuration: 300,
           title: {
-            text: "7日加重平均単価データがありません。",
+            text: "販売価格中値の7日加重平均データがありません。",
             left: "center",
             top: "middle",
             textStyle: { color: "#5b6c5a", fontSize: 14, fontWeight: 500 },
@@ -1025,7 +1065,7 @@
           formatter: (p) => {
             const idx = p.dataIndex;
             const row = weightedRows[idx];
-            return `${row.item_name}<br/>7日加重平均単価: ${fmtPrice(row.weighted_avg_price)}<br/>7日累計入荷量: ${(row.total_quantity || 0).toLocaleString("ja-JP")}`;
+            return `${row.item_name}<br/>販売価格中値（7日加重平均）: ${fmtPrice(row.weighted_avg_price)}<br/>7日累計入荷量: ${(row.total_quantity || 0).toLocaleString("ja-JP")}`;
           },
         },
         grid: { left: 130, right: 48, top: 14, bottom: 58 },
@@ -1135,13 +1175,211 @@
     corrMetaLabelEl.textContent = `期間: ${periodLabel(state.periodDays)} | 最低共通日数: ${corrData.minOverlap} 日 | ペア数: ${corrData.pairs.length}`;
   }
 
+  function weightedPrice(rows) {
+    let qty = 0;
+    let sum = 0;
+    rows.forEach((r) => {
+      if (isPositive(r.avg_price) && isPositive(r.quantity)) {
+        qty += r.quantity;
+        sum += r.avg_price * r.quantity;
+      }
+    });
+    return qty > 0 ? sum / qty : null;
+  }
+
+  function sumQuantity(rows) {
+    return rows.reduce((acc, r) => acc + (isPositive(r.quantity) ? r.quantity : 0), 0);
+  }
+
+  // 直近7日と前の7日を比べた、入荷量の変化率(横軸)と販売価格中値の変化率(縦軸)。
+  // 中値は入荷量で加重平均する。表示期間の切り替えとは連動しない。
+  function renderWeeklyMap() {
+    const latestDate = getLatestDate(state.rows);
+    if (!latestDate) {
+      weeklyMapMetaLabelEl.textContent = "";
+      weeklyMapChart.clear();
+      return;
+    }
+    const recentStart = shiftYmd(latestDate, -6);
+    const priorStart = shiftYmd(latestDate, -13);
+    const priorEnd = shiftYmd(latestDate, -7);
+    const topN = Number(config.weeklyMapTopItems) || 20;
+
+    const points = [];
+    state.seriesByItem.forEach((series, itemName) => {
+      const recent = series.filter((r) => r.sale_date >= recentStart && r.sale_date <= latestDate);
+      const prior = series.filter((r) => r.sale_date >= priorStart && r.sale_date <= priorEnd);
+      const qRecent = sumQuantity(recent);
+      const qPrior = sumQuantity(prior);
+      const pRecent = weightedPrice(recent);
+      const pPrior = weightedPrice(prior);
+      if (!(qRecent > 0) || !(qPrior > 0) || pRecent == null || pPrior == null) {
+        return;
+      }
+      points.push({
+        item_name: itemName,
+        qRecent,
+        qPrior,
+        pRecent,
+        pPrior,
+        qtyChange: ((qRecent - qPrior) / qPrior) * 100,
+        priceChange: ((pRecent - pPrior) / pPrior) * 100,
+        total: qRecent + qPrior,
+      });
+    });
+    points.sort((a, b) => b.total - a.total);
+    const shown = points.slice(0, topN);
+
+    weeklyMapMetaLabelEl.textContent = `直近7日（${formatYmd(recentStart)}〜${formatYmd(latestDate)}） vs 前の7日（${formatYmd(priorStart)}〜${formatYmd(priorEnd)}） | 入荷量上位${shown.length}品目`;
+
+    if (!shown.length) {
+      weeklyMapChart.setOption(
+        {
+          title: {
+            text: "比較できる品目がありません。",
+            left: "center",
+            top: "middle",
+            textStyle: { color: "#5b6c5a", fontSize: 14, fontWeight: 500 },
+          },
+        },
+        true
+      );
+      return;
+    }
+
+    const niceMax = (values) => Math.ceil((Math.max(10, ...values.map(Math.abs)) * 1.15) / 10) * 10;
+    const xMax = niceMax(shown.map((p) => p.qtyChange));
+    const yMax = niceMax(shown.map((p) => p.priceChange));
+    const maxTotal = Math.max(...shown.map((p) => p.total));
+    // 変化の大きい品目と、2軸グラフで選択中の品目だけ名前を出す
+    const labelCount = Number(config.weeklyMapLabelItems) || 6;
+    const labeled = new Set(
+      [...shown]
+        .sort(
+          (a, b) =>
+            Math.hypot(b.qtyChange / xMax, b.priceChange / yMax) - Math.hypot(a.qtyChange / xMax, a.priceChange / yMax)
+        )
+        .slice(0, labelCount)
+        .map((p) => p.item_name)
+    );
+    labeled.add(state.focusItem);
+
+    const fmtPct = (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
+
+    weeklyMapChart.setOption(
+      {
+        animationDuration: 400,
+        tooltip: {
+          trigger: "item",
+          formatter: (p) => {
+            const d = p.data && p.data.point;
+            if (!d) {
+              return "";
+            }
+            return [
+              `<b>${d.item_name}</b>`,
+              `入荷量: ${fmtPct(d.qtyChange)}（${Math.round(d.qPrior).toLocaleString("ja-JP")} → ${Math.round(d.qRecent).toLocaleString("ja-JP")}）`,
+              `販売価格中値: ${fmtPct(d.priceChange)}（${fmtPrice(d.pPrior)} → ${fmtPrice(d.pRecent)}）`,
+            ].join("<br/>");
+          },
+        },
+        grid: { left: 52, right: 20, top: 16, bottom: 52 },
+        xAxis: {
+          type: "value",
+          min: -xMax,
+          max: xMax,
+          name: "入荷量 前週比",
+          nameLocation: "middle",
+          nameGap: 30,
+          nameTextStyle: { color: "#516050" },
+          axisLabel: { color: "#516050", formatter: (v) => `${Math.round(v)}%` },
+          splitLine: { lineStyle: { color: "#e7eee4" } },
+        },
+        yAxis: {
+          type: "value",
+          min: -yMax,
+          max: yMax,
+          name: "中値 前週比",
+          nameLocation: "middle",
+          nameGap: 40,
+          nameTextStyle: { color: "#516050" },
+          axisLabel: { color: "#516050", formatter: (v) => `${Math.round(v)}%` },
+          splitLine: { lineStyle: { color: "#e7eee4" } },
+        },
+        series: [
+          {
+            type: "scatter",
+            silent: true,
+            symbolSize: 0,
+            data: [],
+            // 左上（品薄・値上がり）と右下（出回り増・値下がり）を薄く色付け
+            markArea: {
+              silent: true,
+              data: [
+                [{ coord: [-xMax, 0], itemStyle: { color: "rgba(206, 77, 65, 0.07)" } }, { coord: [0, yMax] }],
+                [{ coord: [0, -yMax], itemStyle: { color: "rgba(26, 118, 162, 0.07)" } }, { coord: [xMax, 0] }],
+              ],
+            },
+            markLine: {
+              silent: true,
+              symbol: "none",
+              label: { show: false },
+              lineStyle: { color: "#94a590", type: "solid", width: 1 },
+              data: [{ xAxis: 0 }, { yAxis: 0 }],
+            },
+            z: 1,
+          },
+          {
+            type: "scatter",
+            cursor: "pointer",
+            labelLayout: { hideOverlap: true },
+            data: shown.map((d) => {
+              const isFocus = d.item_name === state.focusItem;
+              return {
+                name: d.item_name,
+                value: [d.qtyChange, d.priceChange],
+                point: d,
+                symbolSize: 8 + 16 * Math.sqrt(d.total / maxTotal),
+                itemStyle: isFocus
+                  ? { color: "#d06f3b", borderColor: "#fff", borderWidth: 1.5, opacity: 1 }
+                  : { color: "#5470c6", opacity: 0.7 },
+                label: {
+                  show: labeled.has(d.item_name),
+                  formatter: "{b}",
+                  position: "top",
+                  color: isFocus ? "#b0552a" : "#2e3f2f",
+                  fontSize: 11,
+                  fontWeight: isFocus ? 700 : 400,
+                },
+                z: isFocus ? 3 : 2,
+              };
+            }),
+          },
+        ],
+      },
+      true
+    );
+  }
+
+  function setFocusItem(item) {
+    if (!item || !Array.from(focusItemEl.options).some((opt) => opt.value === item)) {
+      return;
+    }
+    state.focusItem = item;
+    focusItemEl.value = item;
+    saveSelectorPrefs();
+    renderComboChart(state.periodRows);
+    renderWeeklyMap();
+  }
+
   function renderAll() {
     const periodRows = filterRowsByPeriod(state.rows, state.periodDays);
     state.periodRows = periodRows;
     ensureSelectors(periodRows);
-    renderKpiCards(periodRows);
+    renderKpiCards();
     renderTrendChart(periodRows);
     renderComboChart(periodRows);
+    renderWeeklyMap();
     if (!corrSectionEl.hidden) {
       renderCorrelationTables(periodRows);
     }
@@ -1203,9 +1441,13 @@
     });
 
     focusItemEl.addEventListener("change", () => {
-      state.focusItem = focusItemEl.value;
-      saveSelectorPrefs();
-      renderAll();
+      setFocusItem(focusItemEl.value);
+    });
+
+    weeklyMapChart.on("click", (params) => {
+      if (params.data && params.data.point) {
+        setFocusItem(params.data.point.item_name);
+      }
     });
 
     corrFocusItemEl.addEventListener("change", () => {
@@ -1221,6 +1463,7 @@
     window.addEventListener("resize", () => {
       trendChart.resize();
       comboChart.resize();
+      weeklyMapChart.resize();
       unitPriceChart.resize();
     });
   }

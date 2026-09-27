@@ -21,7 +21,7 @@
         <div>
           <p class="eyebrow">Okinawa Market Monitor</p>
           <h1>沖縄市況ダッシュボード</h1>
-          <p class="subtitle">本日の平均価格変化率とトレンドを1画面で確認</p>
+          <p class="subtitle">本日の販売価格中値の割高・割安とトレンドを1画面で確認</p>
           <section id="recentUpdatesSection" class="recent-updates" hidden>
             <h2 class="updates-title">直近一週間のアップデート</h2>
             <ul id="recentUpdatesList" class="updates-list"></ul>
@@ -40,7 +40,7 @@
 
       <section>
         <div class="panel-heading">
-          <h2>KPI: 本日の平均価格変化率（前日比）</h2>
+          <h2>KPI: 本日の販売価格中値 割高・割安（過去<span id="kpiBaseDays">14</span>日の中央値比）</h2>
           <p id="kpiDateLabel" class="muted"></p>
         </div>
         <div id="kpiCards" class="kpi-grid"></div>
@@ -90,6 +90,19 @@
           <select id="focusItem" class="field"></select>
           <div id="comboChart" class="chart chart-mid"></div>
         </article>
+      </section>
+
+      <section class="panel panel-full">
+        <div class="panel-heading">
+          <h2>入荷量 × 販売価格中値 前週比マップ</h2>
+          <p id="weeklyMapMetaLabel" class="muted"></p>
+        </div>
+        <p class="muted chart-note">
+          <span class="quad-chip quad-up">左上: 品薄で値上がり</span>
+          <span class="quad-chip quad-down">右下: 出回り増で値下がり</span>
+        </p>
+        <p class="muted chart-note">点の大きさは入荷量。タップすると「入荷量 × 価格（2軸）」の対象品目が切り替わります（オレンジが選択中）。</p>
+        <div id="weeklyMapChart" class="chart chart-map"></div>
       </section>
 
       <section class="panel panel-full">
@@ -169,7 +182,7 @@
           </div>
         </div>
         <div class="panel-heading">
-          <h2>単価ロリポップ（7日加重平均・単価降順）</h2>
+          <h2>販売価格中値ロリポップ（7日・入荷量加重平均、高い順）</h2>
           <p id="unitPriceMetaLabel" class="muted"></p>
         </div>
         <div id="unitPriceChart" class="chart chart-unit"></div>
