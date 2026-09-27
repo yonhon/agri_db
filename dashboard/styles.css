@@ -433,6 +433,35 @@ h2 {
   height: 400px;
 }
 
+.kpi-sub-minor {
+  font-size: 11px;
+}
+
+.chart-note {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+
+.quad-chip {
+  display: inline-block;
+  margin: 0 4px 4px 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--text);
+}
+
+.quad-up {
+  background: rgba(206, 77, 65, 0.12);
+}
+
+.quad-down {
+  background: rgba(26, 118, 162, 0.12);
+}
+
+.chart-map {
+  height: 420px;
+}
+
 .chart-unit {
   height: 640px;
   margin-top: 4px;
