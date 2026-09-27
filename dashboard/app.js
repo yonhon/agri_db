@@ -421,11 +421,16 @@
     三つ葉: "みつば", 芹: "せり", 芥子菜: "からしな", 菜: "な", 長命草: "ちょうめいそう",
     唐辛子: "とうがらし", 落花生: "らっかせい", 西瓜: "すいか", 蜜柑: "みかん", 林檎: "りんご",
     梨: "なし", 苺: "いちご", 桃: "もも", 柿: "かき", 葡萄: "ぶどう", 甘夏: "あまなつ", 檸檬: "れもん",
+    新興: "しんこう", 豊水: "ほうすい", 巨峰: "きょほう", 温州: "うんしゅう", 豆苗: "とうみょう",
+    山菜: "さんさい", 山東菜: "さんとうさい", 軟皮: "なんぴ", 果実: "かじつ", 柑橘: "かんきつ",
+    香辛: "こうしん", 根菜: "こんさい", 土物: "つちもの", 物: "もの", 野菜: "やさい",
+    葉茎菜: "ようけいさい", 類: "るい", その他: "そのた",
     島: "しま", 紅: "べに", 赤: "あか", 青: "あお", 白: "しろ", 黄: "き", 黒: "くろ", 紫: "むらさき",
     新: "しん", 小: "こ", 大: "おお", 長: "なが", 丸: "まる", 花: "はな", 実: "み", 葉: "は", 生: "なま",
   };
   const KANJI_READING_KEYS = Object.keys(KANJI_READINGS).sort((a, b) => b.length - a.length);
   const KANJI_PATTERN = /[\u3400-\u9fff]/;
+  const OTHER_PREFIX = "その他";
   const jaCollator = new Intl.Collator("ja");
 
   function itemReading(name) {
@@ -436,14 +441,22 @@
     return reading;
   }
 
-  // あいうえお順（読みの分からない漢字を含む品目は末尾）
+  // あいうえお順。「その他◯◯」は通常品目の後ろにまとめ、「その他」を除いた読みで並べる。
+  // 読みの分からない漢字を含む品目は各グループの末尾。
   function sortItemsByReading(items) {
     return items
       .map((name) => {
-        const reading = itemReading(name);
-        return { name, reading, unknown: KANJI_PATTERN.test(reading) };
+        const isOther = name.startsWith(OTHER_PREFIX);
+        const reading = itemReading(isOther ? name.slice(OTHER_PREFIX.length) : name);
+        return { name, reading, isOther, unknown: KANJI_PATTERN.test(reading) };
       })
-      .sort((a, b) => a.unknown - b.unknown || jaCollator.compare(a.reading, b.reading) || jaCollator.compare(a.name, b.name))
+      .sort(
+        (a, b) =>
+          a.isOther - b.isOther ||
+          a.unknown - b.unknown ||
+          jaCollator.compare(a.reading, b.reading) ||
+          jaCollator.compare(a.name, b.name)
+      )
       .map((x) => x.name);
   }
 
