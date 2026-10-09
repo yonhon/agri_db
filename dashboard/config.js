@@ -8,4 +8,5 @@ window.DASHBOARD_CONFIG = {
   kpiMinBaselineDays: 7,
   weeklyMapTopItems: 20,
   weeklyMapLabelItems: 6,
+  rollingMinTradingDays: 3,
 };
