@@ -136,7 +136,17 @@ button {
   font-size: 13px;
 }
 
-.period-btn.is-active {
+.control-group-sm {
+  margin-bottom: 8px;
+}
+
+.scale-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.period-btn.is-active,
+.scale-btn.is-active {
   background: var(--accent);
   color: #fff;
 }
@@ -456,6 +466,14 @@ h2 {
 
 .quad-down {
   background: rgba(26, 118, 162, 0.12);
+}
+
+.quad-low {
+  background: rgba(26, 118, 162, 0.06);
+}
+
+.quad-rise {
+  background: rgba(206, 77, 65, 0.06);
 }
 
 .panel-heading-stacked {

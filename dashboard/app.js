@@ -19,6 +19,11 @@
   const unitPriceMetaLabelEl = document.getElementById("unitPriceMetaLabel");
   const weeklyMapMetaLabelEl = document.getElementById("weeklyMapMetaLabel");
   const weeklyMapNoticeEl = document.getElementById("weeklyMapNotice");
+  const trajectoryMetaLabelEl = document.getElementById("trajectoryMetaLabel");
+  const trajectoryNoticeEl = document.getElementById("trajectoryNotice");
+  const phaseMetaLabelEl = document.getElementById("phaseMetaLabel");
+  const phaseNoticeEl = document.getElementById("phaseNotice");
+  const scaleButtons = Array.from(document.querySelectorAll(".scale-btn"));
   const corrTopPairsBodyEl = document.getElementById("corrTopPairsBody");
   const corrBottomPairsBodyEl = document.getElementById("corrBottomPairsBody");
   const corrFocusRankingBodyEl = document.getElementById("corrFocusRankingBody");
@@ -34,6 +39,8 @@
     trendItems: [],
     focusItem: "",
     corrFocusItem: "",
+    // 軌跡・相図の正規化: "ratio" = 中央値比（対数軸） / "z" = 頑健なZスコア
+    phaseScale: "ratio",
     analyticsClient: null,
   };
   const UPDATES_JSON_PATH = "./updates.json";
@@ -43,6 +50,8 @@
   const trendChart = echarts.init(document.getElementById("trendChart"));
   const comboChart = echarts.init(document.getElementById("comboChart"));
   const weeklyMapChart = echarts.init(document.getElementById("weeklyMapChart"));
+  const trajectoryChart = echarts.init(document.getElementById("trajectoryChart"));
+  const phaseChart = echarts.init(document.getElementById("phaseChart"));
   const unitPriceChart = echarts.init(document.getElementById("unitPriceChart"));
   const VISITOR_ID_KEY = "agri_dashboard_visitor_id";
   const SELECTOR_PREFS_KEY = "agri_dashboard_selector_prefs_v1";
@@ -231,6 +240,9 @@
       if (typeof parsed.corrFocusItem === "string") {
         state.corrFocusItem = parsed.corrFocusItem;
       }
+      if (parsed.phaseScale === "ratio" || parsed.phaseScale === "z") {
+        state.phaseScale = parsed.phaseScale;
+      }
       // 期間ボタンにある値（0 = 全期間）のときだけ復元する
       if (periodButtons.some((b) => parsePeriodDays(b.dataset.days) === parsed.periodDays)) {
         state.periodDays = parsed.periodDays;
@@ -249,6 +261,7 @@
           focusItem: state.focusItem,
           corrFocusItem: state.corrFocusItem,
           periodDays: state.periodDays,
+          phaseScale: state.phaseScale,
         })
       );
     } catch (_) {
@@ -566,6 +579,7 @@
     syncTrendOptions();
     renderTrendChart(state.periodRows);
     renderWeeklyMap();
+    renderPhaseCharts();
   }
 
   function ensureSelectors(periodRows) {
@@ -1400,6 +1414,406 @@
     );
   }
 
+  // ---- 軌跡・相図（7日移動平均） ----
+
+  // 暦の7日間（その日を含む過去7日）の入荷量合計と、入荷量加重平均の中値。
+  // 取引日が少ない日は null（線を途切れさせる）。
+  function rollingSeries(itemName, fromYmd, toYmd) {
+    const minDays = Number(config.rollingMinTradingDays) || 3;
+    const byDate = new Map((state.seriesByItem.get(itemName) || []).map((r) => [r.sale_date, r]));
+    const out = [];
+    for (let d = fromYmd; d <= toYmd; d = shiftYmd(d, 1)) {
+      const rows = [];
+      for (let k = 6; k >= 0; k -= 1) {
+        const r = byDate.get(shiftYmd(d, -k));
+        if (r && isPositive(r.quantity) && isPositive(r.avg_price)) {
+          rows.push(r);
+        }
+      }
+      out.push(rows.length >= minDays ? { date: d, q: sumQuantity(rows), p: weightedPrice(rows) } : { date: d, q: null, p: null });
+    }
+    return out;
+  }
+
+  function getPeriodRange() {
+    const latest = getLatestDate(state.rows);
+    if (!latest) {
+      return null;
+    }
+    const start = state.periodDays > 0 ? shiftYmd(latest, -(state.periodDays - 1)) : state.rows[0].sale_date;
+    return { start, end: latest };
+  }
+
+  function getSelectedItems() {
+    return [...new Set([state.focusItem, ...state.trendItems].filter(Boolean))];
+  }
+
+  // オレンジ: 2軸グラフの品目 / 線と同じ色: 品目別価格推移の品目
+  function selectionColor(item) {
+    if (item === state.focusItem) {
+      return "#d06f3b";
+    }
+    return trendColor(Math.max(0, state.trendItems.indexOf(item)));
+  }
+
+  // 正規化。ratio: 中央値との比 / z: (値 − 中央値) ÷ (1.4826 × MAD)
+  function makeScaler(values, mode, center) {
+    const med = center == null ? median(values) : center;
+    if (mode === "ratio") {
+      return (v) => v / med;
+    }
+    const mad = median(values.map((v) => Math.abs(v - med)));
+    let scale = mad * 1.4826;
+    if (!(scale > 1e-9)) {
+      scale = Math.sqrt(values.reduce((a, v) => a + (v - med) ** 2, 0) / Math.max(1, values.length)) || 1;
+    }
+    return (v) => (v - med) / scale;
+  }
+
+  function fmtRatio(v) {
+    if (!Number.isFinite(v)) {
+      return "-";
+    }
+    return `×${v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(2).replace(/0$/, "") : v.toFixed(2)}`;
+  }
+
+  function fmtScaled(v, mode) {
+    return mode === "ratio" ? fmtRatio(v) : `${v > 0 ? "+" : ""}${v.toFixed(2)}σ`;
+  }
+
+  // 正規化後の値の範囲から、原点を中心にした対称な軸を作る
+  function symmetricAxis(values, mode, name, extra) {
+    if (mode === "ratio") {
+      const maxLog = Math.max(...values.map((v) => Math.abs(Math.log2(v))), 0);
+      const k = Math.max(1, Math.ceil(maxLog * 1.05));
+      return {
+        type: "log",
+        logBase: 2,
+        min: 2 ** -k,
+        max: 2 ** k,
+        name,
+        axisLabel: { color: "#516050", formatter: (v) => fmtRatio(v) },
+        k,
+        ...extra,
+      };
+    }
+    const k = Math.max(2, Math.ceil(Math.max(...values.map(Math.abs), 0) * 1.05));
+    return {
+      type: "value",
+      min: -k,
+      max: k,
+      interval: k <= 4 ? 1 : Math.ceil(k / 4),
+      name,
+      axisLabel: { color: "#516050", formatter: (v) => (v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}σ`) },
+      k,
+      ...extra,
+    };
+  }
+
+  // 横軸の名前は下中央、縦軸の名前は軸の上端に置く（containLabel は軸名を含めないため）
+  function axisStyle(axis, isY) {
+    const { k, ...rest } = axis;
+    return {
+      ...rest,
+      nameLocation: isY ? "end" : "middle",
+      nameGap: isY ? 10 : 26,
+      nameTextStyle: { color: "#516050", align: isY ? "left" : "center" },
+      splitLine: { lineStyle: { color: "#e7eee4" } },
+      axisLine: { onZero: false },
+    };
+  }
+
+  // 1品目の軌跡を、古いほど薄く細い複数の線に分けて描く（時間の向きを濃淡で表す）
+  function fadingLineSeries(item, points, color) {
+    const chunks = 5;
+    const n = points.length;
+    const series = [];
+    for (let j = 0; j < chunks; j += 1) {
+      const from = Math.floor((j * n) / chunks);
+      const to = Math.min(n - 1, Math.floor(((j + 1) * n) / chunks));
+      if (to <= from) {
+        continue;
+      }
+      const t = (j + 1) / chunks;
+      series.push({
+        type: "line",
+        name: item,
+        data: points.slice(from, to + 1),
+        showSymbol: true,
+        symbol: "circle",
+        symbolSize: 7,
+        itemStyle: { color, opacity: 0 },
+        emphasis: { itemStyle: { opacity: 1 }, lineStyle: { width: 3 } },
+        lineStyle: { color, width: 0.8 + 1.8 * t, opacity: 0.12 + 0.88 * t ** 1.4 },
+        connectNulls: false,
+        z: 2,
+      });
+    }
+    return series;
+  }
+
+  function finalPointSeries(points, maxQty) {
+    return {
+      type: "scatter",
+      name: "最新",
+      data: points.map((pt) => {
+        const isFocus = pt.item === state.focusItem;
+        return {
+          ...pt,
+          symbolSize: 8 + 16 * Math.sqrt((pt.q || 0) / maxQty),
+          itemStyle: isFocus
+            ? { color: "#d06f3b", borderColor: "#7a3514", borderWidth: 2, opacity: 1 }
+            : { color: selectionColor(pt.item), borderColor: "#fff", borderWidth: 1.5, opacity: 0.95 },
+          label: {
+            show: true,
+            formatter: pt.item,
+            position: "top",
+            color: isFocus ? "#b0552a" : "#1f2d20",
+            fontSize: 11,
+            fontWeight: 700,
+          },
+        };
+      }),
+      labelLayout: { moveOverlap: "shiftY" },
+      z: 4,
+    };
+  }
+
+  function renderEmptyChart(chart, text) {
+    chart.setOption(
+      {
+        title: { text, left: "center", top: "middle", textStyle: { color: "#5b6c5a", fontSize: 14, fontWeight: 500 } },
+      },
+      true
+    );
+  }
+
+  function setNotice(el, missing) {
+    el.textContent = missing.length
+      ? `選択中の${missing.join("、")}は、表示期間に7日間で${Number(config.rollingMinTradingDays) || 3}日以上の取引がないため表示できません。`
+      : "";
+    el.hidden = !missing.length;
+  }
+
+  function scaleLabel(mode) {
+    return mode === "ratio" ? "表示期間の中央値との比" : "Zスコア（中央値・MAD基準）";
+  }
+
+  // 入荷量 × 販売価格中値 の軌跡
+  function renderTrajectory() {
+    const range = getPeriodRange();
+    const mode = state.phaseScale;
+    const items = getSelectedItems();
+    if (!range || !items.length) {
+      trajectoryMetaLabelEl.textContent = "";
+      setNotice(trajectoryNoticeEl, []);
+      renderEmptyChart(trajectoryChart, "表示できるデータがありません。");
+      return;
+    }
+
+    const tracks = [];
+    const missing = [];
+    items.forEach((item) => {
+      const rolled = rollingSeries(item, range.start, range.end);
+      const valid = rolled.filter((r) => r.q != null);
+      if (valid.length < 2) {
+        missing.push(item);
+        return;
+      }
+      const sx = makeScaler(valid.map((r) => r.q), mode);
+      const sy = makeScaler(valid.map((r) => r.p), mode);
+      const points = rolled.map((r) =>
+        r.q == null ? "-" : { value: [sx(r.q), sy(r.p)], item, date: r.date, q: r.q, p: r.p }
+      );
+      tracks.push({ item, points, last: points.filter((pt) => pt !== "-").pop() });
+    });
+
+    trajectoryMetaLabelEl.textContent = `${formatYmd(range.start)}〜${formatYmd(range.end)} | 7日移動平均 | 原点: ${scaleLabel(mode)}`;
+    setNotice(trajectoryNoticeEl, missing);
+    if (!tracks.length) {
+      renderEmptyChart(trajectoryChart, "表示できるデータがありません。");
+      return;
+    }
+
+    const all = tracks.flatMap((t) => t.points.filter((pt) => pt !== "-"));
+    const xAxis = symmetricAxis(all.map((pt) => pt.value[0]), mode, "入荷量（7日合計）");
+    const yAxis = symmetricAxis(all.map((pt) => pt.value[1]), mode, "販売価格中値（7日加重平均）");
+    const one = mode === "ratio" ? 1 : 0;
+    const lo = (axis) => axis.min;
+    const hi = (axis) => axis.max;
+    // 原点を通る「入荷量が増えた分だけ価格が下がる」補助線
+    const d = Math.min(xAxis.k, yAxis.k);
+    const diag = mode === "ratio" ? [[2 ** -d, 2 ** d], [2 ** d, 2 ** -d]] : [[-d, d], [d, -d]];
+    const maxQty = Math.max(...tracks.map((t) => t.last.q));
+
+    trajectoryChart.setOption(
+      {
+        animationDuration: 400,
+        tooltip: {
+          trigger: "item",
+          formatter: (params) => {
+            const pt = params.data;
+            if (!pt || !pt.item) {
+              return "";
+            }
+            return [
+              `<b>${pt.item}</b>（${pt.date} までの7日）`,
+              `入荷量: ${Math.round(pt.q).toLocaleString("ja-JP")}（${fmtScaled(pt.value[0], mode)}）`,
+              `販売価格中値: ${fmtPrice(pt.p)}（${fmtScaled(pt.value[1], mode)}）`,
+            ].join("<br/>");
+          },
+        },
+        grid: { left: 8, right: 16, top: 34, bottom: 36, containLabel: true },
+        xAxis: axisStyle(xAxis, false),
+        yAxis: axisStyle(yAxis, true),
+        series: [
+          {
+            type: "line",
+            silent: true,
+            data: [],
+            markArea: {
+              silent: true,
+              data: [
+                [{ coord: [lo(xAxis), one], itemStyle: { color: "rgba(206, 77, 65, 0.07)" } }, { coord: [one, hi(yAxis)] }],
+                [{ coord: [one, lo(yAxis)], itemStyle: { color: "rgba(26, 118, 162, 0.07)" } }, { coord: [hi(xAxis), one] }],
+              ],
+            },
+            markLine: {
+              silent: true,
+              symbol: "none",
+              label: { show: false },
+              data: [
+                { xAxis: one, lineStyle: { color: "#94a590", type: "solid", width: 1 } },
+                { yAxis: one, lineStyle: { color: "#94a590", type: "solid", width: 1 } },
+                [
+                  { coord: diag[0], lineStyle: { color: "#b9c4b6", type: "dashed", width: 1 } },
+                  { coord: diag[1] },
+                ],
+              ],
+            },
+          },
+          ...tracks.flatMap((t) => fadingLineSeries(t.item, t.points, selectionColor(t.item))),
+          finalPointSeries(tracks.map((t) => t.last), maxQty),
+        ],
+      },
+      true
+    );
+  }
+
+  // 販売価格中値の相図（横軸: 価格の水準 / 縦軸: 7日前からの変化）
+  function renderPhasePortrait() {
+    const range = getPeriodRange();
+    const mode = state.phaseScale;
+    const items = getSelectedItems();
+    if (!range || !items.length) {
+      phaseMetaLabelEl.textContent = "";
+      setNotice(phaseNoticeEl, []);
+      renderEmptyChart(phaseChart, "表示できるデータがありません。");
+      return;
+    }
+
+    const tracks = [];
+    const missing = [];
+    items.forEach((item) => {
+      // 7日前との比較のため、表示期間の7日前から計算する
+      const rolled = rollingSeries(item, shiftYmd(range.start, -7), range.end);
+      const inPeriod = rolled.slice(7);
+      const raw = inPeriod.map((r, i) => {
+        const prev = rolled[i];
+        if (r.p == null || prev.p == null) {
+          return null;
+        }
+        return { date: r.date, p: r.p, q: r.q, change: r.p / prev.p - 1 };
+      });
+      const valid = raw.filter(Boolean);
+      if (valid.length < 2) {
+        missing.push(item);
+        return;
+      }
+      const sx = makeScaler(valid.map((r) => r.p), mode);
+      // 変化の速さは「0 = 横ばい」を原点にする
+      const sy = mode === "ratio" ? (v) => v * 100 : makeScaler(valid.map((r) => r.change), "z", 0);
+      const points = raw.map((r) =>
+        r == null ? "-" : { value: [sx(r.p), sy(r.change)], item, date: r.date, p: r.p, q: r.q, change: r.change }
+      );
+      tracks.push({ item, points, last: points.filter((pt) => pt !== "-").pop() });
+    });
+
+    phaseMetaLabelEl.textContent = `${formatYmd(range.start)}〜${formatYmd(range.end)} | 7日移動平均 | 横軸: ${scaleLabel(mode)}`;
+    setNotice(phaseNoticeEl, missing);
+    if (!tracks.length) {
+      renderEmptyChart(phaseChart, "表示できるデータがありません。");
+      return;
+    }
+
+    const all = tracks.flatMap((t) => t.points.filter((pt) => pt !== "-"));
+    const xAxis = symmetricAxis(all.map((pt) => pt.value[0]), mode, "販売価格中値の水準");
+    let yAxis;
+    if (mode === "ratio") {
+      const yMax = Math.ceil((Math.max(10, ...all.map((pt) => Math.abs(pt.value[1]))) * 1.1) / 10) * 10;
+      yAxis = {
+        type: "value",
+        min: -yMax,
+        max: yMax,
+        interval: yMax / 4,
+        name: "7日前からの変化",
+        axisLabel: { color: "#516050", formatter: (v) => `${v > 0 ? "+" : ""}${Math.round(v)}%` },
+        k: 0,
+      };
+    } else {
+      yAxis = symmetricAxis(all.map((pt) => pt.value[1]), "z", "7日前からの変化");
+    }
+    const one = mode === "ratio" ? 1 : 0;
+    const maxQty = Math.max(...tracks.map((t) => t.last.q));
+    const fmtChange = (pt) =>
+      mode === "ratio" ? `${pt.change > 0 ? "+" : ""}${(pt.change * 100).toFixed(1)}%` : `${fmtScaled(pt.value[1], "z")}（${(pt.change * 100).toFixed(1)}%）`;
+
+    phaseChart.setOption(
+      {
+        animationDuration: 400,
+        tooltip: {
+          trigger: "item",
+          formatter: (params) => {
+            const pt = params.data;
+            if (!pt || !pt.item) {
+              return "";
+            }
+            return [
+              `<b>${pt.item}</b>（${pt.date} までの7日）`,
+              `販売価格中値: ${fmtPrice(pt.p)}（${fmtScaled(pt.value[0], mode)}）`,
+              `7日前からの変化: ${fmtChange(pt)}`,
+            ].join("<br/>");
+          },
+        },
+        grid: { left: 8, right: 16, top: 34, bottom: 36, containLabel: true },
+        xAxis: axisStyle(xAxis, false),
+        yAxis: axisStyle(yAxis, true),
+        series: [
+          {
+            type: "line",
+            silent: true,
+            data: [],
+            markLine: {
+              silent: true,
+              symbol: "none",
+              label: { show: false },
+              lineStyle: { color: "#94a590", type: "solid", width: 1 },
+              data: [{ xAxis: one }, { yAxis: 0 }],
+            },
+          },
+          ...tracks.flatMap((t) => fadingLineSeries(t.item, t.points, selectionColor(t.item))),
+          finalPointSeries(tracks.map((t) => t.last), maxQty),
+        ],
+      },
+      true
+    );
+  }
+
+  function renderPhaseCharts() {
+    renderTrajectory();
+    renderPhasePortrait();
+  }
+
   function setFocusItem(item) {
     if (!item || !Array.from(focusItemEl.options).some((opt) => opt.value === item)) {
       return;
@@ -1409,6 +1823,7 @@
     saveSelectorPrefs();
     renderComboChart(state.periodRows);
     renderWeeklyMap();
+    renderPhaseCharts();
   }
 
   function renderAll() {
@@ -1419,6 +1834,7 @@
     renderTrendChart(periodRows);
     renderComboChart(periodRows);
     renderWeeklyMap();
+    renderPhaseCharts();
     if (!corrSectionEl.hidden) {
       renderCorrelationTables(periodRows);
     }
@@ -1490,6 +1906,27 @@
       }
     });
 
+    [trajectoryChart, phaseChart].forEach((chart) => {
+      chart.on("click", (params) => {
+        if (params.data && params.data.item) {
+          setFocusItem(params.data.item);
+        }
+      });
+    });
+
+    const syncScaleButtons = () => {
+      scaleButtons.forEach((b) => b.classList.toggle("is-active", b.dataset.scale === state.phaseScale));
+    };
+    syncScaleButtons();
+    scaleButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.phaseScale = btn.dataset.scale;
+        syncScaleButtons();
+        saveSelectorPrefs();
+        renderPhaseCharts();
+      });
+    });
+
     corrFocusItemEl.addEventListener("change", () => {
       state.corrFocusItem = corrFocusItemEl.value;
       saveSelectorPrefs();
@@ -1504,6 +1941,8 @@
       trendChart.resize();
       comboChart.resize();
       weeklyMapChart.resize();
+      trajectoryChart.resize();
+      phaseChart.resize();
       unitPriceChart.resize();
     });
   }
