@@ -1,13 +1,12 @@
 name: Daily Shikyo Ingest
 
 on:
+  # 通常の起動。Supabase の pg_cron が JST 12:17 と 14:47 に GitHub の API から呼ぶ（sql/schedule_ingest.sql）。
+  # 市況PDFは JST 11時台に公開される
   workflow_dispatch:
   schedule:
-    # 市況PDFは JST 11時台に公開される。GitHub の定時起動は数時間遅れることがあるので早めに置き、
-    # 混雑する毎時0分・30分を避ける
-    # JST 12:17
-    - cron: "17 3 * * *"
-    # 予備実行（JST 14:47）
+    # 保険。GitHub の定時起動は数時間遅れることがあるので、Supabase からの起動が止まったときのためだけに残す
+    # JST 14:47
     - cron: "47 5 * * *"
 
 jobs:
