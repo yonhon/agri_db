@@ -54,8 +54,9 @@ GitHubリポジトリ > Settings > Secrets and variables > Actions > New reposit
 
 - `.github/workflows/daily_ingest.yml` は以下を設定済み
   - 手動実行 `workflow_dispatch`
-  - 毎日JST 14:30 定期実行
-  - 予備実行 JST 16:00
+  - 毎日JST 12:17 定期実行
+  - 予備実行 JST 14:47
+  - GitHub の定時起動は混雑時に遅れる（数時間遅れることもある）。市況PDFの公開は JST 11時台
 
 最初は Actions タブから手動実行し、`source_files` にデータが入ることを確認してください。
 
