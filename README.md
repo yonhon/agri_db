@@ -290,3 +290,7 @@ node --test tests/agri-mcp.test.mjs
 
 - URL を知っていれば誰でも呼び出せます（データは市況PDFの公開情報）。Supabase の Edge Functions の無料枠（呼び出し回数）を超える使われ方をしていないか、Supabase のダッシュボードで確認してください
 - 相図（`get_phase_state`）は移動平均のため、最新の点はデータ最新日の約1週間前の状態です
+
+### LINE への毎朝の配信
+
+この MCP サーバーを使って市況ダイジェストを LINE に配信する仕組みは、別リポジトリ [agri_line_digest](https://github.com/yonhon/agri_line_digest)（非公開）にあります。ローカルではこのリポジトリの `agri_line_digest/` に置き、`.gitignore` で対象外にしています。
