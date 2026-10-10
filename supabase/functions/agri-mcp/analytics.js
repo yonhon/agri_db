@@ -178,7 +178,7 @@ export function periodRange(latest, earliest, periodDays) {
 }
 
 // 相図の点。key は "p"（販売価格中値）または "q"（入荷量・1取引日平均）。
-// 縦軸の「7日前からの変化」と同じ時点にそろえるため、水準は t−4 と t−3 の平均を使う。
+// 縦軸の前週比（7日前からの変化）と同じ時点にそろえるため、水準は t−4 と t−3 の平均を使う。
 export function computePhase(series, range, key, minDays = 3) {
   const rolled = rollingSeries(series, shiftYmd(range.start, -7), range.end, minDays);
   const inPeriod = rolled.slice(7);
