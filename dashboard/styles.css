@@ -468,20 +468,10 @@ h2 {
   background: rgba(26, 118, 162, 0.12);
 }
 
-.quad-gray-ur {
-  background: rgba(70, 80, 70, 0.16);
-}
-
-.quad-gray-lr {
-  background: rgba(70, 80, 70, 0.11);
-}
-
-.quad-gray-ll {
-  background: rgba(70, 80, 70, 0.05);
-}
-
-.quad-gray-ul {
-  background: rgba(70, 80, 70, 0.08);
+/* 背景色のない象限のキャプション */
+.quad-plain {
+  border: 1px solid var(--line);
+  background: transparent;
 }
 
 .panel-heading-stacked {

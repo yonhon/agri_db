@@ -1725,12 +1725,12 @@
     }
     const one = mode === "ratio" ? 1 : 0;
     const maxQty = Math.max(...tracks.map((t) => t.last.q));
-    // 象限の背景は灰色の濃淡（色に「高値・安値」などの意味を持たせず、位置だけを表す）
+    // 象限の背景は前週比マップと同じ配色（左上を赤、右下を青、他は色なし）
     const tints = {
-      upperRight: "rgba(70, 80, 70, 0.08)",
-      lowerRight: "rgba(70, 80, 70, 0.055)",
-      lowerLeft: "rgba(70, 80, 70, 0.025)",
-      upperLeft: "rgba(70, 80, 70, 0.04)",
+      upperRight: "rgba(0, 0, 0, 0)",
+      lowerRight: "rgba(26, 118, 162, 0.07)",
+      lowerLeft: "rgba(0, 0, 0, 0)",
+      upperLeft: "rgba(206, 77, 65, 0.07)",
     };
     const fmtChange = (pt) =>
       mode === "ratio" ? `${pt.change > 0 ? "+" : ""}${(pt.change * 100).toFixed(1)}%` : `${fmtScaled(pt.value[1], "z")}（${(pt.change * 100).toFixed(1)}%）`;
