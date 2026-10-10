@@ -19,8 +19,8 @@
   const unitPriceMetaLabelEl = document.getElementById("unitPriceMetaLabel");
   const weeklyMapMetaLabelEl = document.getElementById("weeklyMapMetaLabel");
   const weeklyMapNoticeEl = document.getElementById("weeklyMapNotice");
-  const trajectoryMetaLabelEl = document.getElementById("trajectoryMetaLabel");
-  const trajectoryNoticeEl = document.getElementById("trajectoryNotice");
+  const qtyPhaseMetaLabelEl = document.getElementById("qtyPhaseMetaLabel");
+  const qtyPhaseNoticeEl = document.getElementById("qtyPhaseNotice");
   const phaseMetaLabelEl = document.getElementById("phaseMetaLabel");
   const phaseNoticeEl = document.getElementById("phaseNotice");
   const scaleButtons = Array.from(document.querySelectorAll(".scale-btn"));
@@ -50,7 +50,7 @@
   const trendChart = echarts.init(document.getElementById("trendChart"));
   const comboChart = echarts.init(document.getElementById("comboChart"));
   const weeklyMapChart = echarts.init(document.getElementById("weeklyMapChart"));
-  const trajectoryChart = echarts.init(document.getElementById("trajectoryChart"));
+  const qtyPhaseChart = echarts.init(document.getElementById("qtyPhaseChart"));
   const phaseChart = echarts.init(document.getElementById("phaseChart"));
   const unitPriceChart = echarts.init(document.getElementById("unitPriceChart"));
   const VISITOR_ID_KEY = "agri_dashboard_visitor_id";
@@ -1614,116 +1614,16 @@
     return mode === "ratio" ? "表示期間の中央値との比" : "Zスコア（中央値・MAD基準）";
   }
 
-  // 入荷量 × 販売価格中値 の軌跡
-  function renderTrajectory() {
+  // 相図（横軸: 水準 / 縦軸: 7日前からの変化）。spec.key が "p" なら販売価格中値、"q" なら入荷量（1取引日平均）
+  function renderPhasePortrait(spec) {
+    const { chart, metaEl, noticeEl, key } = spec;
     const range = getPeriodRange();
     const mode = state.phaseScale;
     const items = getSelectedItems();
     if (!range || !items.length) {
-      trajectoryMetaLabelEl.textContent = "";
-      setNotice(trajectoryNoticeEl, []);
-      renderEmptyChart(trajectoryChart, "表示できるデータがありません。");
-      return;
-    }
-
-    const tracks = [];
-    const missing = [];
-    items.forEach((item) => {
-      const rolled = rollingSeries(item, range.start, range.end);
-      const valid = rolled.filter((r) => r.q != null);
-      if (valid.length < 2) {
-        missing.push(item);
-        return;
-      }
-      const sx = makeScaler(valid.map((r) => r.q), mode);
-      const sy = makeScaler(valid.map((r) => r.p), mode);
-      const points = rolled.map((r) =>
-        r.q == null ? "-" : { value: [sx(r.q), sy(r.p)], item, date: r.date, q: r.q, p: r.p }
-      );
-      tracks.push({ item, points, last: points.filter((pt) => pt !== "-").pop() });
-    });
-
-    trajectoryMetaLabelEl.textContent = `${formatYmd(range.start)}〜${formatYmd(range.end)} | 7日移動平均 | 原点: ${scaleLabel(mode)}`;
-    setNotice(trajectoryNoticeEl, missing);
-    if (!tracks.length) {
-      renderEmptyChart(trajectoryChart, "表示できるデータがありません。");
-      return;
-    }
-
-    const all = tracks.flatMap((t) => t.points.filter((pt) => pt !== "-"));
-    const xAxis = symmetricAxis(all.map((pt) => pt.value[0]), mode, "入荷量（7日間の1取引日平均）");
-    const yAxis = symmetricAxis(all.map((pt) => pt.value[1]), mode, "販売価格中値（7日加重平均）");
-    const one = mode === "ratio" ? 1 : 0;
-    const lo = (axis) => axis.min;
-    const hi = (axis) => axis.max;
-    // 原点を通る「入荷量が増えた分だけ価格が下がる」補助線
-    const d = Math.min(xAxis.k, yAxis.k);
-    const diag = mode === "ratio" ? [[2 ** -d, 2 ** d], [2 ** d, 2 ** -d]] : [[-d, d], [d, -d]];
-    const maxQty = Math.max(...tracks.map((t) => t.last.q));
-
-    trajectoryChart.setOption(
-      {
-        animationDuration: 400,
-        tooltip: {
-          trigger: "item",
-          formatter: (params) => {
-            const pt = params.data;
-            if (!pt || !pt.item) {
-              return "";
-            }
-            return [
-              `<b>${pt.item}</b>（${pt.date} までの7日）`,
-              `入荷量（1取引日平均）: ${Math.round(pt.q).toLocaleString("ja-JP")}（${fmtScaled(pt.value[0], mode)}）`,
-              `販売価格中値: ${fmtPrice(pt.p)}（${fmtScaled(pt.value[1], mode)}）`,
-            ].join("<br/>");
-          },
-        },
-        grid: { left: 8, right: 16, top: 34, bottom: 36, containLabel: true },
-        xAxis: axisStyle(xAxis, false),
-        yAxis: axisStyle(yAxis, true),
-        series: [
-          {
-            type: "line",
-            silent: true,
-            data: [],
-            markArea: {
-              silent: true,
-              data: [
-                [{ coord: [lo(xAxis), one], itemStyle: { color: "rgba(206, 77, 65, 0.07)" } }, { coord: [one, hi(yAxis)] }],
-                [{ coord: [one, lo(yAxis)], itemStyle: { color: "rgba(26, 118, 162, 0.07)" } }, { coord: [hi(xAxis), one] }],
-              ],
-            },
-            markLine: {
-              silent: true,
-              symbol: "none",
-              label: { show: false },
-              data: [
-                { xAxis: one, lineStyle: { color: "#94a590", type: "solid", width: 1 } },
-                { yAxis: one, lineStyle: { color: "#94a590", type: "solid", width: 1 } },
-                [
-                  { coord: diag[0], lineStyle: { color: "#b9c4b6", type: "dashed", width: 1 } },
-                  { coord: diag[1] },
-                ],
-              ],
-            },
-          },
-          ...tracks.flatMap((t) => fadingLineSeries(t.item, t.points, selectionColor(t.item))),
-          finalPointSeries(tracks.map((t) => t.last), maxQty),
-        ],
-      },
-      true
-    );
-  }
-
-  // 販売価格中値の相図（横軸: 価格の水準 / 縦軸: 7日前からの変化）
-  function renderPhasePortrait() {
-    const range = getPeriodRange();
-    const mode = state.phaseScale;
-    const items = getSelectedItems();
-    if (!range || !items.length) {
-      phaseMetaLabelEl.textContent = "";
-      setNotice(phaseNoticeEl, []);
-      renderEmptyChart(phaseChart, "表示できるデータがありません。");
+      metaEl.textContent = "";
+      setNotice(noticeEl, []);
+      renderEmptyChart(chart, "表示できるデータがありません。");
       return;
     }
 
@@ -1735,34 +1635,34 @@
       const inPeriod = rolled.slice(7);
       const raw = inPeriod.map((r, i) => {
         const prev = rolled[i];
-        if (r.p == null || prev.p == null) {
+        if (r[key] == null || prev[key] == null) {
           return null;
         }
-        return { date: r.date, p: r.p, q: r.q, change: r.p / prev.p - 1 };
+        return { date: r.date, p: r.p, q: r.q, change: r[key] / prev[key] - 1 };
       });
       const valid = raw.filter(Boolean);
       if (valid.length < 2) {
         missing.push(item);
         return;
       }
-      const sx = makeScaler(valid.map((r) => r.p), mode);
+      const sx = makeScaler(valid.map((r) => r[key]), mode);
       // 変化の速さは「0 = 横ばい」を原点にする
       const sy = mode === "ratio" ? (v) => v * 100 : makeScaler(valid.map((r) => r.change), "z", 0);
       const points = raw.map((r) =>
-        r == null ? "-" : { value: [sx(r.p), sy(r.change)], item, date: r.date, p: r.p, q: r.q, change: r.change }
+        r == null ? "-" : { value: [sx(r[key]), sy(r.change)], item, date: r.date, p: r.p, q: r.q, change: r.change }
       );
       tracks.push({ item, points, last: points.filter((pt) => pt !== "-").pop() });
     });
 
-    phaseMetaLabelEl.textContent = `${formatYmd(range.start)}〜${formatYmd(range.end)} | 7日移動平均 | 横軸: ${scaleLabel(mode)}`;
-    setNotice(phaseNoticeEl, missing);
+    metaEl.textContent = `${formatYmd(range.start)}〜${formatYmd(range.end)} | 7日移動平均 | 横軸: ${scaleLabel(mode)}`;
+    setNotice(noticeEl, missing);
     if (!tracks.length) {
-      renderEmptyChart(phaseChart, "表示できるデータがありません。");
+      renderEmptyChart(chart, "表示できるデータがありません。");
       return;
     }
 
     const all = tracks.flatMap((t) => t.points.filter((pt) => pt !== "-"));
-    const xAxis = symmetricAxis(all.map((pt) => pt.value[0]), mode, "販売価格中値の水準");
+    const xAxis = symmetricAxis(all.map((pt) => pt.value[0]), mode, key === "p" ? "販売価格中値の水準" : "入荷量の水準（1取引日平均）");
     let yAxis;
     if (mode === "ratio") {
       const maxAbs = Math.max(10, ...all.map((pt) => Math.abs(pt.value[1]))) * 1.1;
@@ -1785,7 +1685,12 @@
     const fmtChange = (pt) =>
       mode === "ratio" ? `${pt.change > 0 ? "+" : ""}${(pt.change * 100).toFixed(1)}%` : `${fmtScaled(pt.value[1], "z")}（${(pt.change * 100).toFixed(1)}%）`;
 
-    phaseChart.setOption(
+    const levelLine = (pt) =>
+      key === "p"
+        ? `販売価格中値: ${fmtPrice(pt.p)}（${fmtScaled(pt.value[0], mode)}）`
+        : `入荷量（1取引日平均）: ${Math.round(pt.q).toLocaleString("ja-JP")}（${fmtScaled(pt.value[0], mode)}）`;
+
+    chart.setOption(
       {
         animationDuration: 400,
         tooltip: {
@@ -1797,7 +1702,7 @@
             }
             return [
               `<b>${pt.item}</b>（${pt.date} までの7日）`,
-              `販売価格中値: ${fmtPrice(pt.p)}（${fmtScaled(pt.value[0], mode)}）`,
+              levelLine(pt),
               `7日前からの変化: ${fmtChange(pt)}`,
             ].join("<br/>");
           },
@@ -1827,8 +1732,8 @@
   }
 
   function renderPhaseCharts() {
-    renderTrajectory();
-    renderPhasePortrait();
+    renderPhasePortrait({ chart: phaseChart, metaEl: phaseMetaLabelEl, noticeEl: phaseNoticeEl, key: "p" });
+    renderPhasePortrait({ chart: qtyPhaseChart, metaEl: qtyPhaseMetaLabelEl, noticeEl: qtyPhaseNoticeEl, key: "q" });
   }
 
   function setFocusItem(item) {
@@ -1923,7 +1828,7 @@
       }
     });
 
-    [trajectoryChart, phaseChart].forEach((chart) => {
+    [phaseChart, qtyPhaseChart].forEach((chart) => {
       chart.on("click", (params) => {
         if (params.data && params.data.item) {
           setFocusItem(params.data.item);
@@ -1958,7 +1863,7 @@
       trendChart.resize();
       comboChart.resize();
       weeklyMapChart.resize();
-      trajectoryChart.resize();
+      qtyPhaseChart.resize();
       phaseChart.resize();
       unitPriceChart.resize();
     });
