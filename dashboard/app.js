@@ -1725,6 +1725,13 @@
     }
     const one = mode === "ratio" ? 1 : 0;
     const maxQty = Math.max(...tracks.map((t) => t.last.q));
+    // 象限の背景は灰色の濃淡（色に「高値・安値」などの意味を持たせず、位置だけを表す）
+    const tints = {
+      upperRight: "rgba(70, 80, 70, 0.08)",
+      lowerRight: "rgba(70, 80, 70, 0.055)",
+      lowerLeft: "rgba(70, 80, 70, 0.025)",
+      upperLeft: "rgba(70, 80, 70, 0.04)",
+    };
     const fmtChange = (pt) =>
       mode === "ratio" ? `${pt.change > 0 ? "+" : ""}${(pt.change * 100).toFixed(1)}%` : `${fmtScaled(pt.value[1], "z")}（${(pt.change * 100).toFixed(1)}%）`;
 
@@ -1761,6 +1768,16 @@
             type: "line",
             silent: true,
             data: [],
+            // 象限の背景色（グラフ上部のキャプションと同じ配色）
+            markArea: {
+              silent: true,
+              data: [
+                [{ coord: [one, 0], itemStyle: { color: tints.upperRight } }, { coord: [xAxis.max, yAxis.max] }],
+                [{ coord: [one, yAxis.min], itemStyle: { color: tints.lowerRight } }, { coord: [xAxis.max, 0] }],
+                [{ coord: [xAxis.min, yAxis.min], itemStyle: { color: tints.lowerLeft } }, { coord: [one, 0] }],
+                [{ coord: [xAxis.min, 0], itemStyle: { color: tints.upperLeft } }, { coord: [one, yAxis.max] }],
+              ],
+            },
             markLine: {
               silent: true,
               symbol: "none",
