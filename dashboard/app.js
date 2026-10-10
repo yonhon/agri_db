@@ -1707,7 +1707,7 @@
     const all = tracks.flatMap((t) => t.points.filter((pt) => pt !== "-"));
     // 軸の名前は前週比マップと同じにする（最新の点では、前週比マップの値とほぼ同じ量になる）
     const changeName = key === "p" ? "中値 前週比" : "入荷量 前週比";
-    const xAxis = symmetricAxis(all.map((pt) => pt.value[0]), mode, key === "p" ? "販売価格中値の水準" : "入荷量の水準（1取引日平均）");
+    const xAxis = symmetricAxis(all.map((pt) => pt.value[0]), mode, key === "p" ? "販売価格中値の水準" : "入荷量の水準");
     let yAxis;
     if (mode === "ratio") {
       const maxAbs = Math.max(10, ...all.map((pt) => Math.abs(pt.value[1]))) * 1.1;
