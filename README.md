@@ -53,12 +53,51 @@ GitHubリポジトリ > Settings > Secrets and variables > Actions > New reposit
 ## 6. GitHub Actions実行
 
 - `.github/workflows/daily_ingest.yml` は以下を設定済み
-  - 手動実行 `workflow_dispatch`
-  - 毎日JST 12:17 定期実行
-  - 予備実行 JST 14:47
-  - GitHub の定時起動は混雑時に遅れる（数時間遅れることもある）。市況PDFの公開は JST 11時台
+  - 手動実行 `workflow_dispatch`（Supabase からの定期起動もこの経路。「6-1」参照）
+  - GitHub の定時起動 JST 14:47（保険。混雑時は数時間遅れる）
+- 市況PDFの公開は JST 11時台
 
 最初は Actions タブから手動実行し、`source_files` にデータが入ることを確認してください。
+
+### 6-1. Supabase から定期起動する
+
+GitHub Actions の定時起動（`schedule`）は数時間遅れることがあるため、毎日の取り込みは Supabase の `pg_cron` から GitHub の API を呼んで起動します（JST 12:17、予備 JST 14:47）。手動実行と同じ経路なので、ほぼ時刻どおりに始まります。
+
+初回の設定:
+
+1. GitHub でトークンを発行する（Settings → Developer settings → Personal access tokens → Fine-grained tokens）
+   - Repository access: Only select repositories → このリポジトリだけ
+   - Permissions → Repository permissions → Actions: Read and write
+2. Supabase の SQL Editor で、トークンを Vault に登録する（`ghp_xxx` の部分を発行したトークンに置き換える。この SQL は保存しない）
+
+   ```sql
+   select vault.create_secret('ghp_xxx', 'github_actions_dispatch_token');
+   ```
+
+3. SQL Editor で `sql/schedule_ingest.sql` を実行する
+
+確認:
+
+```sql
+-- 登録されたジョブ
+select jobname, schedule, active from cron.job;
+-- GitHub からの応答（204 なら成功。401 はトークンの誤りか期限切れ、404 は権限不足）
+select status_code, content, error_msg, created from net._http_response order by created desc limit 5;
+```
+
+注意:
+
+- トークンには有効期限がある。期限が切れると Supabase からの起動は止まり、GitHub の定時起動（保険）だけになる。新しいトークンを発行し、Vault の値を更新する
+
+  ```sql
+  select vault.update_secret(
+    (select id from vault.secrets where name = 'github_actions_dispatch_token'),
+    'ghp_新しいトークン'
+  );
+  ```
+
+- トークンは Vault にだけ置く。リポジトリや SQL のファイルには書かない
+- `pg_cron` の時刻は UTC（`sql/schedule_ingest.sql` の `17 3 * * *` が JST 12:17）
 
 ## 7. 現在の保存内容
 
