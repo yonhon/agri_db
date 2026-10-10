@@ -1,0 +1,7 @@
+# Supabase CLI の設定（Edge Functions の配備に使う）。
+# 配備は .github/workflows/deploy_mcp.yml が行う。
+project_id = "agri_db"
+
+[functions.agri-mcp]
+# claude.ai のコネクタからログインなしで呼ぶため、JWT 検証を無効にする（読み取り専用のサーバー）
+verify_jwt = false
