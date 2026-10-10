@@ -1725,13 +1725,16 @@
     }
     const one = mode === "ratio" ? 1 : 0;
     const maxQty = Math.max(...tracks.map((t) => t.last.q));
-    // 象限の背景は前週比マップと同じ配色（左上を赤、右下を青、他は色なし）
-    const tints = {
-      upperRight: "rgba(0, 0, 0, 0)",
-      lowerRight: "rgba(26, 118, 162, 0.07)",
-      lowerLeft: "rgba(0, 0, 0, 0)",
-      upperLeft: "rgba(206, 77, 65, 0.07)",
-    };
+    // 象限の背景色は価格への影響の向き（赤: 値上がり方向、青: 値下がり方向）。前週比マップと同じ色を使う。
+    // 価格: 左上（安値圏から回復）を赤、右下（高値圏から下落）を青。
+    // 入荷量: 右上（多くてさらに増加 = 出回りのピークへ）を青、左下（少なくてさらに減少 = 品薄が深まる）を赤。
+    const red = "rgba(206, 77, 65, 0.07)";
+    const blue = "rgba(26, 118, 162, 0.07)";
+    const none = "rgba(0, 0, 0, 0)";
+    const tints =
+      key === "p"
+        ? { upperRight: none, lowerRight: blue, lowerLeft: none, upperLeft: red }
+        : { upperRight: blue, lowerRight: none, lowerLeft: red, upperLeft: none };
     const fmtChange = (pt) =>
       mode === "ratio" ? `${pt.change > 0 ? "+" : ""}${(pt.change * 100).toFixed(1)}%` : `${fmtScaled(pt.value[1], "z")}（${(pt.change * 100).toFixed(1)}%）`;
 
