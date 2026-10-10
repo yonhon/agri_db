@@ -44,6 +44,11 @@
     analyticsClient: null,
   };
   const UPDATES_JSON_PATH = "./updates.json";
+  // ツールチップをグラフの枠内に収め、狭い画面では長い行を折り返す
+  const TOOLTIP_BASE = {
+    confine: true,
+    extraCssText: "max-width: min(92vw, 360px); white-space: normal; overflow-wrap: anywhere;",
+  };
   // 品目チップの色をグラフの線と一致させるため、ECharts既定パレットを明示する
   const TREND_COLORS = ["#5470c6", "#91cc75", "#fac858", "#ee6666", "#73c0de", "#3ba272", "#fc8452", "#9a60b4", "#ea7ccc"];
 
@@ -746,7 +751,7 @@
     trendChart.setOption(
       {
         animationDuration: 400,
-        tooltip: { trigger: "axis" },
+        tooltip: { ...TOOLTIP_BASE, trigger: "axis" },
         legend: { top: 0, type: "scroll" },
         // 軸ラベルの桁数に合わせて余白を自動調整する
         grid: { left: 8, right: 22, top: 36, bottom: 8, containLabel: true },
@@ -771,7 +776,7 @@
     comboChart.setOption(
       {
         animationDuration: 400,
-        tooltip: { trigger: "axis" },
+        tooltip: { ...TOOLTIP_BASE, trigger: "axis" },
         legend: { top: 0, data: ["入荷量", "販売価格中値"] },
         grid: { left: 8, right: 8, top: 44, bottom: 8, containLabel: true },
         xAxis: { type: "category", data: xData, axisLabel: { color: "#516050" } },
@@ -1083,6 +1088,7 @@
       {
         animationDuration: 400,
         tooltip: {
+          ...TOOLTIP_BASE,
           trigger: "item",
           formatter: (p) => {
             const idx = p.dataIndex;
@@ -1330,6 +1336,7 @@
       {
         animationDuration: 400,
         tooltip: {
+          ...TOOLTIP_BASE,
           trigger: "item",
           formatter: (p) => {
             const d = p.data && p.data.point;
@@ -1732,6 +1739,7 @@
       {
         animationDuration: 400,
         tooltip: {
+          ...TOOLTIP_BASE,
           trigger: "item",
           formatter: (params) => {
             const pt = params.data;
