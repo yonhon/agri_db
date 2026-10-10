@@ -1633,28 +1633,39 @@
       // 7日前との比較のため、表示期間の7日前から計算する
       const rolled = rollingSeries(item, shiftYmd(range.start, -7), range.end);
       const inPeriod = rolled.slice(7);
+      // 縦軸の「7日前からの変化」は区間 [t−7, t] の真ん中（t−3.5日）の速さを表すため、
+      // 横軸の水準も同じ時刻（t−4日と t−3日の平均）にそろえる。
+      // 最新日の水準を使うと時刻が3.5日ずれ、偶然の揺れで点が斜めに流れる。
       const raw = inPeriod.map((r, i) => {
         const prev = rolled[i];
-        if (r[key] == null || prev[key] == null) {
+        const midA = rolled[i + 3];
+        const midB = rolled[i + 4];
+        if (r[key] == null || prev[key] == null || midA[key] == null || midB[key] == null) {
           return null;
         }
-        return { date: r.date, p: r.p, q: r.q, change: r[key] / prev[key] - 1 };
+        return {
+          date: r.date,
+          level: (midA[key] + midB[key]) / 2,
+          p: (midA.p + midB.p) / 2,
+          q: (midA.q + midB.q) / 2,
+          change: r[key] / prev[key] - 1,
+        };
       });
       const valid = raw.filter(Boolean);
       if (valid.length < 2) {
         missing.push(item);
         return;
       }
-      const sx = makeScaler(valid.map((r) => r[key]), mode);
+      const sx = makeScaler(valid.map((r) => r.level), mode);
       // 変化の速さは「0 = 横ばい」を原点にする
       const sy = mode === "ratio" ? (v) => v * 100 : makeScaler(valid.map((r) => r.change), "z", 0);
       const points = raw.map((r) =>
-        r == null ? "-" : { value: [sx(r[key]), sy(r.change)], item, date: r.date, p: r.p, q: r.q, change: r.change }
+        r == null ? "-" : { value: [sx(r.level), sy(r.change)], item, date: r.date, p: r.p, q: r.q, change: r.change }
       );
       tracks.push({ item, points, last: points.filter((pt) => pt !== "-").pop() });
     });
 
-    metaEl.textContent = `${formatYmd(range.start)}〜${formatYmd(range.end)} | 7日移動平均 | 横軸: ${scaleLabel(mode)}`;
+    metaEl.textContent = `${formatYmd(range.start)}〜${formatYmd(range.end)} | 7日移動平均 | 横軸: ${scaleLabel(mode)}（変化区間の真ん中の時点）`;
     setNotice(noticeEl, missing);
     if (!tracks.length) {
       renderEmptyChart(chart, "表示できるデータがありません。");
@@ -1685,10 +1696,12 @@
     const fmtChange = (pt) =>
       mode === "ratio" ? `${pt.change > 0 ? "+" : ""}${(pt.change * 100).toFixed(1)}%` : `${fmtScaled(pt.value[1], "z")}（${(pt.change * 100).toFixed(1)}%）`;
 
-    const levelLine = (pt) =>
-      key === "p"
-        ? `販売価格中値: ${fmtPrice(pt.p)}（${fmtScaled(pt.value[0], mode)}）`
-        : `入荷量（1取引日平均）: ${Math.round(pt.q).toLocaleString("ja-JP")}（${fmtScaled(pt.value[0], mode)}）`;
+    const levelLine = (pt) => {
+      const when = `${formatYmd(shiftYmd(pt.date, -4))}〜${formatYmd(shiftYmd(pt.date, -3))}頃`;
+      return key === "p"
+        ? `販売価格中値（${when}）: ${fmtPrice(pt.p)}（${fmtScaled(pt.value[0], mode)}）`
+        : `入荷量・1取引日平均（${when}）: ${Math.round(pt.q).toLocaleString("ja-JP")}（${fmtScaled(pt.value[0], mode)}）`;
+    };
 
     chart.setOption(
       {
@@ -1701,9 +1714,9 @@
               return "";
             }
             return [
-              `<b>${pt.item}</b>（${pt.date} までの7日）`,
+              `<b>${pt.item}</b>`,
               levelLine(pt),
-              `7日前からの変化: ${fmtChange(pt)}`,
+              `7日前からの変化（${formatYmd(shiftYmd(pt.date, -7))}→${formatYmd(pt.date)}）: ${fmtChange(pt)}`,
             ].join("<br/>");
           },
         },
