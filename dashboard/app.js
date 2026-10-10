@@ -1414,24 +1414,49 @@
     );
   }
 
-  // ---- 軌跡・相図（7日移動平均） ----
+  // ---- 相図（7日 → 3日の二段の移動平均） ----
 
-  // 暦の7日間（その日を含む過去7日）の、1取引日あたりの入荷量と、入荷量加重平均の中値。
+  // 1段目: 暦の7日間（その日を含む過去7日）の、1取引日あたりの入荷量と、入荷量加重平均の中値。
+  // 暦の7日間には各曜日が1回ずつ入るので、曜日による偏りが消える。
   // 入荷量を合計ではなく取引日数で割るのは、祝日などで7日間の取引日数が変わっても揺れないようにするため。
   // 取引日が少ない日は null（線を途切れさせる）。
+  function rolling7(byDate, d, minDays) {
+    const rows = [];
+    for (let k = 6; k >= 0; k -= 1) {
+      const r = byDate.get(shiftYmd(d, -k));
+      if (r && isPositive(r.quantity) && isPositive(r.avg_price)) {
+        rows.push(r);
+      }
+    }
+    if (rows.length < minDays) {
+      return null;
+    }
+    const total = sumQuantity(rows);
+    return { q: total / rows.length, p: weightedPrice(rows), total };
+  }
+
+  // 2段目: 1段目の値をさらに過去3日間で平均する（重みは9日間で 1・2・3・3・3・3・3・2・1 になる）。
+  // 突出した入荷の日が窓に出入りするときの跳ねを抑える。中値は7日間の入荷量合計で重み付けする。
   function rollingSeries(itemName, fromYmd, toYmd) {
     const minDays = Number(config.rollingMinTradingDays) || 3;
     const byDate = new Map((state.seriesByItem.get(itemName) || []).map((r) => [r.sale_date, r]));
+    const first = new Map();
+    for (let d = shiftYmd(fromYmd, -2); d <= toYmd; d = shiftYmd(d, 1)) {
+      first.set(d, rolling7(byDate, d, minDays));
+    }
     const out = [];
     for (let d = fromYmd; d <= toYmd; d = shiftYmd(d, 1)) {
-      const rows = [];
-      for (let k = 6; k >= 0; k -= 1) {
-        const r = byDate.get(shiftYmd(d, -k));
-        if (r && isPositive(r.quantity) && isPositive(r.avg_price)) {
-          rows.push(r);
-        }
+      const parts = [0, 1, 2].map((k) => first.get(shiftYmd(d, -k)));
+      if (parts.some((x) => x == null)) {
+        out.push({ date: d, q: null, p: null });
+        continue;
       }
-      out.push(rows.length >= minDays ? { date: d, q: sumQuantity(rows) / rows.length, p: weightedPrice(rows) } : { date: d, q: null, p: null });
+      const total = parts.reduce((a, x) => a + x.total, 0);
+      out.push({
+        date: d,
+        q: parts.reduce((a, x) => a + x.q, 0) / 3,
+        p: parts.reduce((a, x) => a + x.p * x.total, 0) / total,
+      });
     }
     return out;
   }
@@ -1665,7 +1690,7 @@
       tracks.push({ item, points, last: points.filter((pt) => pt !== "-").pop() });
     });
 
-    metaEl.textContent = `${formatYmd(range.start)}〜${formatYmd(range.end)} | 7日移動平均 | 横軸: ${scaleLabel(mode)}（変化区間の真ん中の時点）`;
+    metaEl.textContent = `${formatYmd(range.start)}〜${formatYmd(range.end)} | 7日→3日の二段移動平均 | 横軸: ${scaleLabel(mode)}（変化区間の真ん中の時点）`;
     setNotice(noticeEl, missing);
     if (!tracks.length) {
       renderEmptyChart(chart, "表示できるデータがありません。");
