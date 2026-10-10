@@ -1697,7 +1697,7 @@
       tracks.push({ item, points, last: points.filter((pt) => pt !== "-").pop() });
     });
 
-    metaEl.textContent = `${formatYmd(range.start)}〜${formatYmd(range.end)} | 7日→3日の二段移動平均 | 横軸: ${scaleLabel(mode)}（変化区間の真ん中の時点）`;
+    metaEl.textContent = `${formatYmd(range.start)}〜${formatYmd(range.end)} | 7日→3日の二段移動平均 | 横軸: ${scaleLabel(mode)} | 最新の点: ${formatYmd(shiftYmd(range.end, -8))}〜${formatYmd(shiftYmd(range.end, -7))}頃の状態`;
     setNotice(noticeEl, missing);
     if (!tracks.length) {
       renderEmptyChart(chart, "表示できるデータがありません。");
@@ -1738,8 +1738,12 @@
     const fmtChange = (pt) =>
       mode === "ratio" ? `${pt.change > 0 ? "+" : ""}${(pt.change * 100).toFixed(1)}%` : `${fmtScaled(pt.value[1], "z")}（${(pt.change * 100).toFixed(1)}%）`;
 
+    // 表示用の「実際の時点」。二段の移動平均（9日窓）の値は、計算上の日付 d より約4日前を中心とする。
+    // 水準はさらに d−3.5 にそろえているので、点は計算上の日付の約7.5日前（d−8〜d−7）の状態を表す。
+    // 変化は、約 d−11 を中心とする値から約 d−4 を中心とする値への変化。
+    const pointWhen = (d) => `${formatYmd(shiftYmd(d, -8))}〜${formatYmd(shiftYmd(d, -7))}頃`;
     const levelLine = (pt) => {
-      const when = `${formatYmd(shiftYmd(pt.date, -4))}〜${formatYmd(shiftYmd(pt.date, -3))}頃`;
+      const when = pointWhen(pt.date);
       return key === "p"
         ? `販売価格中値（${when}）: ${fmtPrice(pt.p)}（${fmtScaled(pt.value[0], mode)}）`
         : `入荷量・1取引日平均（${when}）: ${Math.round(pt.q).toLocaleString("ja-JP")}（${fmtScaled(pt.value[0], mode)}）`;
@@ -1759,7 +1763,7 @@
             return [
               `<b>${pt.item}</b>`,
               levelLine(pt),
-              `7日前からの変化（${formatYmd(shiftYmd(pt.date, -7))}→${formatYmd(pt.date)}）: ${fmtChange(pt)}`,
+              `7日前からの変化（${formatYmd(shiftYmd(pt.date, -11))}頃→${formatYmd(shiftYmd(pt.date, -4))}頃）: ${fmtChange(pt)}`,
             ].join("<br/>");
           },
         },
