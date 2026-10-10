@@ -5,12 +5,20 @@
   const monthlyMetaEl = document.getElementById("monthlyMeta");
   const errorMetaEl = document.getElementById("errorMeta");
   const errorLatestBodyEl = document.getElementById("errorLatestBody");
+  const mcpNoticeEl = document.getElementById("mcpNotice");
+  const mcpDailyMetaEl = document.getElementById("mcpDailyMeta");
+  const mcpClientMetaEl = document.getElementById("mcpClientMeta");
+  const mcpItemsBodyEl = document.getElementById("mcpItemsBody");
+  const mcpErrorsBodyEl = document.getElementById("mcpErrorsBody");
   const periodButtons = Array.from(document.querySelectorAll(".period-btn"));
   const reloadBtn = document.getElementById("reloadBtn");
 
   const dailyTrendChart = echarts.init(document.getElementById("dailyTrendChart"));
   const monthlyTrendChart = echarts.init(document.getElementById("monthlyTrendChart"));
   const errorDailyChart = echarts.init(document.getElementById("errorDailyChart"));
+  const mcpDailyChart = echarts.init(document.getElementById("mcpDailyChart"));
+  const mcpClientChart = echarts.init(document.getElementById("mcpClientChart"));
+  const MCP_COLORS = ["#5470c6", "#91cc75", "#fac858", "#73c0de", "#3ba272", "#fc8452", "#9a60b4", "#ea7ccc"];
 
   const VISITOR_ID_KEY = "agri_dashboard_visitor_id";
 
@@ -21,6 +29,11 @@
     dailyUserPv: [],
     monthlyUserPv: [],
     errorLatest: [],
+    mcpDaily: [],
+    mcpClientDaily: [],
+    mcpItems: [],
+    mcpErrors: [],
+    mcpError: null,
     client: null,
   };
 
@@ -368,10 +381,131 @@
     });
   }
 
+  // 最新日から periodDays 日分の日付（記録のない日も 0 として並べる）
+  function recentDayList(rows, periodDays) {
+    if (!rows.length) {
+      return [];
+    }
+    const latest = rows.reduce((a, r) => (r.day_jst > a ? r.day_jst : a), rows[0].day_jst);
+    const days = [];
+    const d = toDate(latest);
+    for (let i = 0; i < periodDays; i += 1) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      days.unshift(`${y}-${m}-${day}`);
+      d.setDate(d.getDate() - 1);
+    }
+    return days;
+  }
+
+  // 系列名ごとに日付別の値を積み上げ棒にする
+  function stackedSeries(rows, days, nameKey, valueKey) {
+    const totals = new Map();
+    rows.forEach((r) => totals.set(r[nameKey], (totals.get(r[nameKey]) || 0) + Number(r[valueKey] || 0)));
+    const names = Array.from(totals.keys()).sort((a, b) => totals.get(b) - totals.get(a));
+    return names.map((name, idx) => {
+      const byDay = new Map(rows.filter((r) => r[nameKey] === name).map((r) => [r.day_jst, Number(r[valueKey] || 0)]));
+      return {
+        name,
+        type: "bar",
+        stack: "total",
+        barMaxWidth: 18,
+        itemStyle: { color: MCP_COLORS[idx % MCP_COLORS.length] },
+        data: days.map((d) => byDay.get(d) || 0),
+      };
+    });
+  }
+
+  function renderMcpSection() {
+    if (state.mcpError) {
+      mcpNoticeEl.hidden = false;
+      mcpNoticeEl.textContent = `MCPの集計を読み込めませんでした（${state.mcpError}）。集計ビューは毎日の取り込み処理で作成されるため、初回は次回の取り込み後に表示されます。`;
+    } else {
+      mcpNoticeEl.hidden = true;
+    }
+
+    const days = recentDayList([...state.mcpDaily, ...state.mcpClientDaily], state.periodDays);
+    const inRange = (rows) => rows.filter((r) => days.includes(r.day_jst));
+    const daily = inRange(state.mcpDaily);
+    const clients = inRange(state.mcpClientDaily);
+    const errorsByDay = new Map();
+    daily.forEach((r) => errorsByDay.set(r.day_jst, (errorsByDay.get(r.day_jst) || 0) + Number(r.errors || 0)));
+    const totalCalls = daily.reduce((a, r) => a + Number(r.calls || 0), 0);
+    const totalErrors = daily.reduce((a, r) => a + Number(r.errors || 0), 0);
+
+    const baseOption = {
+      animationDuration: 300,
+      tooltip: { trigger: "axis", confine: true },
+      legend: { top: 0, type: "scroll" },
+      grid: { left: 8, right: 16, top: 40, bottom: 8, containLabel: true },
+      xAxis: { type: "category", data: days.map(fmtYmd) },
+      yAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#e7eee4" } } },
+    };
+    mcpDailyChart.setOption(
+      {
+        ...baseOption,
+        series: [
+          ...stackedSeries(daily, days, "tool", "calls"),
+          {
+            name: "うちエラー",
+            type: "line",
+            showSymbol: false,
+            lineStyle: { width: 2, color: "#ce4d41" },
+            itemStyle: { color: "#ce4d41" },
+            data: days.map((d) => errorsByDay.get(d) || 0),
+          },
+        ],
+      },
+      true
+    );
+    mcpDailyMetaEl.textContent = `表示期間: 直近${state.periodDays}日 / 呼び出し ${totalCalls}回（うちエラー ${totalErrors}回）`;
+
+    mcpClientChart.setOption({ ...baseOption, series: stackedSeries(clients, days, "client", "calls") }, true);
+    const connects = clients.reduce((a, r) => a + Number(r.connects || 0), 0);
+    mcpClientMetaEl.textContent = `表示期間: 直近${state.periodDays}日 / 接続（初期化） ${connects}回`;
+
+    if (state.mcpError) {
+      renderEmptyTableRow(mcpItemsBodyEl, 4, "読み込めませんでした。");
+    } else if (!state.mcpItems.length) {
+      renderEmptyTableRow(mcpItemsBodyEl, 4, "直近7日で品目を指定した呼び出しはありません。");
+    } else {
+      clearChildren(mcpItemsBodyEl);
+      state.mcpItems.slice(0, 20).forEach((row, idx) => {
+        const tr = document.createElement("tr");
+        appendTableCell(tr, String(idx + 1), "rank");
+        appendTableCell(tr, String(row.item || ""));
+        appendTableCell(tr, String(Number(row.count_7d || 0)));
+        appendTableCell(tr, fmtDateTime(row.last_seen_at));
+        mcpItemsBodyEl.appendChild(tr);
+      });
+    }
+
+    if (state.mcpError) {
+      renderEmptyTableRow(mcpErrorsBodyEl, 6, "読み込めませんでした。");
+    } else if (!state.mcpErrors.length) {
+      renderEmptyTableRow(mcpErrorsBodyEl, 6, "直近7日でMCPのエラーはありません。");
+    } else {
+      clearChildren(mcpErrorsBodyEl);
+      const kind = { mcp_input_error: "入力（品目名・引数）", mcp_internal_error: "サーバー内部", mcp_unknown_tool: "存在しないツール" };
+      state.mcpErrors.slice(0, 20).forEach((row, idx) => {
+        const tr = document.createElement("tr");
+        appendTableCell(tr, String(idx + 1), "rank");
+        appendTableCell(tr, String(row.tool || ""));
+        appendTableCell(tr, kind[row.error_code] || String(row.error_code || ""));
+        appendTableCell(tr, String(row.message_summary || ""));
+        appendTableCell(tr, String(Number(row.count_7d || 0)));
+        appendTableCell(tr, fmtDateTime(row.last_seen_at));
+        mcpErrorsBodyEl.appendChild(tr);
+      });
+    }
+  }
+
   function renderAll() {
     renderDailyTrend();
     renderMonthlyTrend();
     renderErrorSection();
+    renderMcpSection();
     setStatus("利用ログを表示中");
   }
 
@@ -397,6 +531,8 @@
       dailyTrendChart.resize();
       monthlyTrendChart.resize();
       errorDailyChart.resize();
+      mcpDailyChart.resize();
+      mcpClientChart.resize();
     });
   }
 
@@ -413,6 +549,26 @@
     state.dailyUserPv = dailyUserPv.sort((a, b) => String(a.day_jst).localeCompare(String(b.day_jst)));
     state.monthlyUserPv = monthlyUserPv.sort((a, b) => String(a.month_jst).localeCompare(String(b.month_jst)));
     state.errorLatest = errorLatest.sort((a, b) => Number(b.count_7d || 0) - Number(a.count_7d || 0));
+    await loadMcpData();
+  }
+
+  // MCP の集計は別に読み込む（ビューがまだ無くても、他の欄は表示する）
+  async function loadMcpData() {
+    try {
+      const [daily, clients, items, errors] = await Promise.all([
+        fetchAllFromView("usage_mcp_daily_jst", "day_jst,tool,calls,errors,avg_ms", "day_jst"),
+        fetchAllFromView("usage_mcp_client_daily_jst", "day_jst,client,calls,connects", "day_jst"),
+        fetchAllFromView("usage_mcp_items_7d_jst", "item,count_7d,last_seen_at", "last_seen_at"),
+        fetchAllFromView("usage_mcp_errors_7d_jst", "tool,error_code,message_summary,count_7d,last_seen_at", "last_seen_at"),
+      ]);
+      state.mcpDaily = daily;
+      state.mcpClientDaily = clients;
+      state.mcpItems = items.sort((a, b) => Number(b.count_7d || 0) - Number(a.count_7d || 0) || String(b.last_seen_at).localeCompare(String(a.last_seen_at)));
+      state.mcpErrors = errors.sort((a, b) => Number(b.count_7d || 0) - Number(a.count_7d || 0) || String(b.last_seen_at).localeCompare(String(a.last_seen_at)));
+      state.mcpError = null;
+    } catch (error) {
+      state.mcpError = sanitizeMessage(error.message || String(error));
+    }
   }
 
   async function main() {

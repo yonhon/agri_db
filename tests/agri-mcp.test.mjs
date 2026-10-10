@@ -117,3 +117,83 @@ test("two-stage moving average has weights 1,2,3,3,3,3,3,2,1 (/21)", () => {
   assert.deepEqual(weights.filter(Boolean), [1, 2, 3, 3, 3, 3, 3, 2, 1]);
   assert.ok(computePhase(series, periodRange("2026-07-10", "2026-06-01", 30), "p"));
 });
+
+// ---- 利用状況ログ ----
+import { createUsageLogger, clientLabel, MCP_VISITOR_ID } from "../supabase/functions/agri-mcp/usage.js";
+
+function setupWithLog() {
+  const events = [];
+  const pending = [];
+  const data = createDataSource({ supabaseUrl: "https://example.supabase.co", anonKey: "anon", fetchImpl: mockFetch(makeRows(), []) });
+  const handle = createMcpHandler({
+    getRows: () => data.getRows(),
+    logEvent: (e) => events.push(e),
+    waitUntil: (p) => pending.push(p),
+  });
+  const post = (body, ua = "Claude-User") =>
+    handle(new Request("http://x", { method: "POST", headers: { "user-agent": ua }, body: JSON.stringify(body) }));
+  return { events, pending, post };
+}
+
+test("logs connects and tool calls with resolved item names, args and errors", async () => {
+  const { events, pending, post } = setupWithLog();
+  await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-ai", version: "1.0" } } });
+  await post({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "get_phase_state", arguments: { items: ["しまばなな", "レタス"], period_days: 30 } } });
+  await post({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "get_item_history", arguments: { item: "キャベツ" } } }, "openai-mcp/1.0");
+  await post({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "nope", arguments: {} } });
+  await post({ jsonrpc: "2.0", id: 5, method: "tools/list" });
+  assert.equal(pending.length, 4, "every log goes through waitUntil");
+  const [connect, phase, missing, unknown] = events;
+  assert.equal(connect.eventType, "mcp_connect");
+  assert.equal(connect.metadata.client, "Claude");
+  assert.equal(connect.metadata.client_name, "claude-ai");
+  assert.equal(phase.eventType, "mcp_call");
+  assert.equal(phase.pagePath, "/mcp/get_phase_state");
+  assert.deepEqual(phase.metadata.items.sort(), ["レタス", "島バナナ"].sort());
+  assert.deepEqual(phase.metadata.args, { period_days: 30 });
+  assert.equal(phase.metadata.is_error, false);
+  assert.ok(Number.isFinite(phase.metadata.ms));
+  assert.equal(missing.metadata.is_error, true);
+  assert.equal(missing.errorCode, "mcp_input_error");
+  assert.equal(missing.metadata.client, "ChatGPT");
+  assert.match(missing.message, /キャベツ/);
+  assert.equal(unknown.errorCode, "mcp_unknown_tool");
+});
+
+test("a failing logger never breaks the response", async () => {
+  const data = createDataSource({ supabaseUrl: "https://example.supabase.co", anonKey: "anon", fetchImpl: mockFetch(makeRows(), []) });
+  const handle = createMcpHandler({
+    getRows: () => data.getRows(),
+    logEvent: () => {
+      throw new Error("db down");
+    },
+  });
+  const res = await handle(new Request("http://x", { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "list_items", arguments: {} } }) }));
+  const body = await res.json();
+  assert.equal(body.result.isError, undefined);
+});
+
+test("usage logger posts to usage_events with the fixed visitor id and clipped fields", async () => {
+  const calls = [];
+  const log = createUsageLogger({
+    supabaseUrl: "https://example.supabase.co/",
+    anonKey: "anon",
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return new Response(null, { status: 201 });
+    },
+  });
+  await log({ eventType: "mcp_call", pagePath: "/mcp/list_items", message: "x".repeat(500), metadata: { tool: "list_items" } });
+  assert.equal(calls[0].url, "https://example.supabase.co/rest/v1/usage_events");
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.visitor_id, MCP_VISITOR_ID);
+  assert.equal(body.event_type, "mcp_call");
+  assert.equal(body.message_summary.length, 200);
+  assert.equal(calls[0].init.headers.Prefer, "return=minimal");
+  assert.equal(createUsageLogger({ supabaseUrl: "", anonKey: "" }), null);
+  // 書き込みに失敗しても例外を投げない
+  const failing = createUsageLogger({ supabaseUrl: "https://e", anonKey: "a", fetchImpl: async () => { throw new Error("offline"); } });
+  await failing({ eventType: "mcp_call", pagePath: "/mcp/x" });
+  assert.equal(clientLabel("python-httpx/0.27", "Cursor"), "Cursor");
+  assert.equal(clientLabel("curl/8"), "その他");
+});

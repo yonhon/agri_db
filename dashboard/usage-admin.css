@@ -30,3 +30,8 @@
     grid-template-columns: 1fr;
   }
 }
+
+.usage-section-title {
+  margin: 22px 2px 6px;
+  font-size: 18px;
+}

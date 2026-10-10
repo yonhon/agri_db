@@ -22,7 +22,7 @@
         <div>
           <p class="eyebrow">Usage Monitoring</p>
           <h1>利用状況ログ</h1>
-          <p class="subtitle">日次・月次のUU/PVとエラー発生状況を確認</p>
+          <p class="subtitle">日次・月次のUU/PVとエラー発生状況、MCP（AIからの利用）を確認</p>
         </div>
         <div class="toolbar">
           <div class="control-group" role="group" aria-label="日次期間選択">
@@ -76,6 +76,69 @@
                 </tr>
               </thead>
               <tbody id="errorLatestBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <h2 class="usage-section-title">MCP利用状況（Claude などのAIからの利用）</h2>
+      <p id="mcpNotice" class="muted usage-meta" hidden></p>
+
+      <section class="usage-grid">
+        <article class="panel">
+          <div class="panel-heading">
+            <h2>MCP呼び出し回数（日次・ツール別）</h2>
+            <p id="mcpDailyMeta" class="muted usage-meta"></p>
+          </div>
+          <div id="mcpDailyChart" class="chart chart-lg"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading">
+            <h2>MCP接続元アプリ（日次の呼び出し回数）</h2>
+            <p id="mcpClientMeta" class="muted usage-meta"></p>
+          </div>
+          <div id="mcpClientChart" class="chart chart-lg"></div>
+        </article>
+      </section>
+
+      <section class="usage-grid">
+        <article class="panel">
+          <div class="panel-heading">
+            <h2>よく聞かれた品目（直近7日）</h2>
+            <p class="muted usage-meta">回数順（照合後の品目名）</p>
+          </div>
+          <div class="table-wrap">
+            <table class="corr-table">
+              <thead>
+                <tr>
+                  <th>順位</th>
+                  <th>品目</th>
+                  <th>回数(7日)</th>
+                  <th>最終(JST)</th>
+                </tr>
+              </thead>
+              <tbody id="mcpItemsBody"></tbody>
+            </table>
+          </div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading">
+            <h2>MCPのエラー（直近7日）</h2>
+            <p class="muted usage-meta">件数順（同率は最新時刻順）</p>
+          </div>
+          <div class="table-wrap">
+            <table class="corr-table">
+              <thead>
+                <tr>
+                  <th>順位</th>
+                  <th>ツール</th>
+                  <th>エラーの種類</th>
+                  <th>メッセージ要約</th>
+                  <th>件数(7日)</th>
+                  <th>最終発生(JST)</th>
+                </tr>
+              </thead>
+              <tbody id="mcpErrorsBody"></tbody>
             </table>
           </div>
         </article>

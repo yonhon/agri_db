@@ -138,6 +138,11 @@ on usage_events(event_type, event_at desc);
 create index if not exists idx_usage_events_visitor_id
 on usage_events(visitor_id, event_at desc);
 
+-- MCP サーバー（supabase/functions/agri-mcp）の利用も記録する。既存テーブルの制約も付け替える
+alter table usage_events drop constraint if exists usage_events_event_type_check;
+alter table usage_events add constraint usage_events_event_type_check
+check (event_type in ('page_view', 'error', 'mcp_connect', 'mcp_call'));
+
 alter table usage_events enable row level security;
 
 drop policy if exists usage_events_insert_anon on usage_events;
@@ -147,7 +152,7 @@ for insert
 to anon, authenticated
 with check (
   char_length(visitor_id) between 8 and 64
-  and event_type in ('page_view', 'error')
+  and event_type in ('page_view', 'error', 'mcp_connect', 'mcp_call')
   and char_length(page_path) between 1 and 255
   and (message_summary is null or char_length(message_summary) <= 200)
 );
@@ -216,5 +221,63 @@ grant select on table usage_monthly_metrics_jst to anon, authenticated;
 grant select on table usage_daily_user_pv_jst to anon, authenticated;
 grant select on table usage_monthly_user_pv_jst to anon, authenticated;
 grant select on table usage_error_latest_7d_jst to anon, authenticated;
+-- MCP の利用状況（usage-admin.html の「MCP利用状況」で表示）
+drop view if exists usage_mcp_daily_jst;
+create or replace view usage_mcp_daily_jst as
+select
+  (event_at at time zone 'Asia/Tokyo')::date as day_jst,
+  coalesce(nullif(metadata->>'tool', ''), '(unknown)') as tool,
+  count(*)::bigint as calls,
+  count(*) filter (where metadata->>'is_error' = 'true')::bigint as errors,
+  round(avg(case when metadata->>'ms' ~ '^[0-9]+([.][0-9]+)?$' then (metadata->>'ms')::numeric end))::bigint as avg_ms
+from usage_events
+where event_type = 'mcp_call'
+group by 1, 2;
+
+drop view if exists usage_mcp_client_daily_jst;
+create or replace view usage_mcp_client_daily_jst as
+select
+  (event_at at time zone 'Asia/Tokyo')::date as day_jst,
+  coalesce(nullif(metadata->>'client', ''), 'その他') as client,
+  count(*) filter (where event_type = 'mcp_call')::bigint as calls,
+  count(*) filter (where event_type = 'mcp_connect')::bigint as connects
+from usage_events
+where event_type in ('mcp_call', 'mcp_connect')
+group by 1, 2;
+
+drop view if exists usage_mcp_items_7d_jst;
+create or replace view usage_mcp_items_7d_jst as
+select
+  item,
+  count(*)::bigint as count_7d,
+  max(e.event_at) as last_seen_at
+from usage_events e
+cross join lateral jsonb_array_elements_text(
+  case when jsonb_typeof(e.metadata->'items') = 'array' then e.metadata->'items' else '[]'::jsonb end
+) as item
+where e.event_type = 'mcp_call'
+  and e.event_at >= now() - interval '7 days'
+group by item
+order by count_7d desc, last_seen_at desc;
+
+drop view if exists usage_mcp_errors_7d_jst;
+create or replace view usage_mcp_errors_7d_jst as
+select
+  coalesce(nullif(metadata->>'tool', ''), '(unknown)') as tool,
+  coalesce(error_code, 'unknown') as error_code,
+  coalesce(nullif(message_summary, ''), '(no message)') as message_summary,
+  count(*)::bigint as count_7d,
+  max(event_at) as last_seen_at
+from usage_events
+where event_type = 'mcp_call'
+  and metadata->>'is_error' = 'true'
+  and event_at >= now() - interval '7 days'
+group by 1, 2, 3
+order by count_7d desc, last_seen_at desc;
+
+grant select on table usage_mcp_daily_jst to anon, authenticated;
+grant select on table usage_mcp_client_daily_jst to anon, authenticated;
+grant select on table usage_mcp_items_7d_jst to anon, authenticated;
+grant select on table usage_mcp_errors_7d_jst to anon, authenticated;
 grant insert on table usage_events to anon, authenticated;
 grant usage, select on sequence usage_events_id_seq to anon, authenticated;

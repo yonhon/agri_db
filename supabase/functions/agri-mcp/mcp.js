@@ -1,6 +1,7 @@
 // MCP（Model Context Protocol）サーバー。Streamable HTTP トランスポートのステートレス実装。
 // クライアントが POST した JSON-RPC メッセージに、JSON で応答する（SSE は使わない）。
-import { TOOLS, callTool } from "./tools.js";
+import { TOOLS, runTool } from "./tools.js";
+import { clientLabel, clip } from "./usage.js";
 
 const SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER_INFO = { name: "agri-db-okinawa-market", title: "沖縄市況データ", version: "0.1.0" };
@@ -31,7 +32,20 @@ function rpcError(id, code, message) {
 
 const publicTool = ({ run, ...rest }) => rest;
 
-async function handleMessage(msg, getRows) {
+// 利用状況ログに残す引数（品目名は照合後の正式名を別に記録する。数値の設定と検索語だけを残す）
+function summarizeArgs(args) {
+  const out = {};
+  if (!args || typeof args !== "object") {
+    return out;
+  }
+  ["days", "top", "period_days", "path_points"].forEach((k) => {
+    if (Number.isFinite(Number(args[k])) && args[k] !== null && args[k] !== "") out[k] = Number(args[k]);
+  });
+  if (typeof args.query === "string") out.query = clip(args.query, 40);
+  return out;
+}
+
+async function handleMessage(msg, getRows, reqInfo, log) {
   if (!msg || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") {
     return rpcError(msg && msg.id, -32600, "Invalid Request");
   }
@@ -44,6 +58,18 @@ async function handleMessage(msg, getRows) {
     case "initialize": {
       const requested = params.protocolVersion;
       const protocolVersion = SUPPORTED_VERSIONS.includes(requested) ? requested : SUPPORTED_VERSIONS[0];
+      const info = params.clientInfo || {};
+      log({
+        eventType: "mcp_connect",
+        pagePath: "/mcp/initialize",
+        metadata: {
+          client: clientLabel(reqInfo.userAgent, info.name),
+          client_name: clip(info.name, 60),
+          client_version: clip(info.version, 30),
+          protocol_version: protocolVersion,
+          user_agent: clip(reqInfo.userAgent, 120),
+        },
+      });
       return {
         jsonrpc: "2.0",
         id,
@@ -55,11 +81,34 @@ async function handleMessage(msg, getRows) {
     case "tools/list":
       return { jsonrpc: "2.0", id, result: { tools: TOOLS.map(publicTool) } };
     case "tools/call": {
-      const result = await callTool(params.name, params.arguments, getRows);
-      if (!result) {
+      const started = Date.now();
+      const run = await runTool(params.name, params.arguments, getRows);
+      const toolName = clip(params.name, 60) || "(none)";
+      const base = {
+        tool: toolName,
+        client: clientLabel(reqInfo.userAgent),
+        user_agent: clip(reqInfo.userAgent, 120),
+        args: summarizeArgs(params.arguments),
+        ms: Date.now() - started,
+      };
+      if (!run) {
+        log({
+          eventType: "mcp_call",
+          pagePath: `/mcp/${toolName}`,
+          errorCode: "mcp_unknown_tool",
+          message: `Unknown tool: ${toolName}`,
+          metadata: { ...base, items: [], is_error: true },
+        });
         return rpcError(id, -32602, `Unknown tool: ${params.name}`);
       }
-      return { jsonrpc: "2.0", id, result };
+      log({
+        eventType: "mcp_call",
+        pagePath: `/mcp/${toolName}`,
+        errorCode: run.errorKind,
+        message: run.message || null,
+        metadata: { ...base, items: run.items.slice(0, 10).map((x) => clip(x, 40)), is_error: Boolean(run.errorKind) },
+      });
+      return { jsonrpc: "2.0", id, result: run.result };
     }
     case "resources/list":
       return { jsonrpc: "2.0", id, result: { resources: [] } };
@@ -70,7 +119,16 @@ async function handleMessage(msg, getRows) {
   }
 }
 
-export function createMcpHandler({ getRows }) {
+// logEvent: 利用状況ログへの書き込み（省略可）。waitUntil: 応答後も書き込みを続けるための関数
+export function createMcpHandler({ getRows, logEvent = null, waitUntil = (p) => p }) {
+  const log = (event) => {
+    if (!logEvent) return;
+    try {
+      waitUntil(Promise.resolve(logEvent(event)).catch(() => {}));
+    } catch (_) {
+      // 記録の失敗で応答を止めない
+    }
+  };
   return async function handle(req) {
     if (req.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: CORS });
@@ -87,7 +145,8 @@ export function createMcpHandler({ getRows }) {
     }
     const batch = Array.isArray(body);
     const messages = batch ? body : [body];
-    const responses = (await Promise.all(messages.map((m) => handleMessage(m, getRows)))).filter(Boolean);
+    const reqInfo = { userAgent: req.headers.get("user-agent") || "" };
+    const responses = (await Promise.all(messages.map((m) => handleMessage(m, getRows, reqInfo, log)))).filter(Boolean);
     if (!responses.length) {
       return new Response(null, { status: 202, headers: CORS });
     }
