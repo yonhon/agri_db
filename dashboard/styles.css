@@ -452,6 +452,42 @@ h2 {
   font-size: 12px;
 }
 
+.chart-details summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.chart-details p {
+  margin: 4px 0 0;
+}
+
+/* 2つの相図は、見出し・切り替え・注意書き・凡例・図の読み方・グラフの行を左右でそろえる。
+   説明文の行数が左右で違っても、片方だけ開いても、グラフの位置がずれない。 */
+@media (min-width: 801px) {
+  .phase-grid > .panel {
+    display: grid;
+    grid-template-rows: subgrid;
+    grid-row: span 6;
+    row-gap: 0;
+  }
+
+  .phase-grid > .panel > * {
+    min-width: 0;
+  }
+
+  .phase-grid > .panel > .control-group {
+    justify-self: start;
+  }
+
+  /* 注意書きが片方だけ非表示でも行がずれないよう、行を明示する */
+  .phase-grid > .panel > .panel-heading { grid-row: 1; }
+  .phase-grid > .panel > .control-group { grid-row: 2; }
+  .phase-grid > .panel > .chart-notice { grid-row: 3; }
+  .phase-grid > .panel > .chart-note { grid-row: 4; }
+  .phase-grid > .panel > .chart-details { grid-row: 5; }
+  .phase-grid > .panel > .chart { grid-row: 6; }
+}
+
 .quad-chip {
   display: inline-block;
   margin: 0 4px 4px 0;
