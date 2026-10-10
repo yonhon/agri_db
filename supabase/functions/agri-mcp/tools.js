@@ -40,6 +40,8 @@ function buildContext(rows) {
     latest: latestDate(rows),
     earliest: rows.reduce((a, r) => (a && a < r.sale_date ? a : r.sale_date), null),
     names: [...seriesByItem.keys()],
+    // 呼び出しで照合された品目名（利用状況ログの「よく聞かれた品目」に使う）
+    resolved: new Set(),
   };
 }
 
@@ -48,17 +50,21 @@ function resolveItem(ctx, query) {
   if (typeof query !== "string" || !query.trim()) {
     throw new ToolInputError("品目名を指定してください。");
   }
+  const found = (name) => {
+    ctx.resolved.add(name);
+    return name;
+  };
   if (ctx.seriesByItem.has(query)) {
-    return query;
+    return found(query);
   }
   const q = normalizeName(query);
   const exact = ctx.names.filter((n) => nameKeys(n).includes(q));
   if (exact.length === 1) {
-    return exact[0];
+    return found(exact[0]);
   }
   const partial = ctx.names.filter((n) => nameKeys(n).some((k) => k.includes(q)));
   if (partial.length === 1) {
-    return partial[0];
+    return found(partial[0]);
   }
   const hint = (partial.length ? partial : exact).slice(0, 10);
   throw new ToolInputError(
@@ -319,17 +325,34 @@ export const TOOLS = [
   },
 ];
 
-export async function callTool(name, args, getRows) {
+// ツールを実行し、MCP の結果と、利用状況ログ用の情報（照合された品目名・エラーの種類）を返す
+export async function runTool(name, args, getRows) {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) {
     return null;
   }
+  let ctx = null;
   try {
-    const ctx = buildContext(await getRows());
+    ctx = buildContext(await getRows());
     const result = tool.run(ctx, args || {});
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return {
+      result: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] },
+      items: [...ctx.resolved],
+      errorKind: null,
+    };
   } catch (error) {
-    const message = error instanceof ToolInputError ? error.message : `内部エラー: ${error.message || String(error)}`;
-    return { content: [{ type: "text", text: message }], isError: true };
+    const isInput = error instanceof ToolInputError;
+    const message = isInput ? error.message : `内部エラー: ${error.message || String(error)}`;
+    return {
+      result: { content: [{ type: "text", text: message }], isError: true },
+      items: ctx ? [...ctx.resolved] : [],
+      errorKind: isInput ? "mcp_input_error" : "mcp_internal_error",
+      message,
+    };
   }
+}
+
+export async function callTool(name, args, getRows) {
+  const run = await runTool(name, args, getRows);
+  return run ? run.result : null;
 }

@@ -4,12 +4,18 @@
 // SUPABASE_URL と SUPABASE_ANON_KEY は Edge Functions の実行環境に自動で設定される。
 import { createDataSource } from "./data.js";
 import { createMcpHandler } from "./mcp.js";
+import { createUsageLogger } from "./usage.js";
 
-const data = createDataSource({
-  supabaseUrl: Deno.env.get("SUPABASE_URL") ?? "",
-  anonKey: Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-});
+const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-const handle = createMcpHandler({ getRows: () => data.getRows() });
+const data = createDataSource({ supabaseUrl, anonKey });
+// 利用状況ログ（usage_events）への記録。応答を返した後も書き込みを続けられるよう EdgeRuntime.waitUntil を使う
+const logEvent = createUsageLogger({ supabaseUrl, anonKey });
+// deno-lint-ignore no-explicit-any
+const edgeRuntime = (globalThis as any).EdgeRuntime;
+const waitUntil = (p: Promise<unknown>) => (edgeRuntime?.waitUntil ? edgeRuntime.waitUntil(p) : p);
+
+const handle = createMcpHandler({ getRows: () => data.getRows(), logEvent, waitUntil });
 
 Deno.serve(handle);

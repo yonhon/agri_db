@@ -213,6 +213,10 @@ grant select on table market_daily_item_stats to anon, authenticated;
 - `usage_daily_user_pv_jst`（日次ユーザー別PV）
 - `usage_monthly_user_pv_jst`（月次ユーザー別PV）
 - `usage_error_latest_7d_jst`（直近7日エラー上位）
+- `usage_mcp_daily_jst`（MCPの日次・ツール別の呼び出し回数とエラー回数）
+- `usage_mcp_client_daily_jst`（MCPの日次・接続元アプリ別の呼び出し回数と接続回数）
+- `usage_mcp_items_7d_jst`（MCPで直近7日によく聞かれた品目）
+- `usage_mcp_errors_7d_jst`（MCPの直近7日のエラー上位）
 
 ### 10-2. 閲覧ページ
 
@@ -222,11 +226,16 @@ grant select on table market_daily_item_stats to anon, authenticated;
   - 日次トレンド（UU/PV/上位5ユーザーPV、30/90日切替）
   - 月次トレンド（UU/PV/上位5ユーザーPV、直近12か月）
   - エラー監視（日次件数 + 直近7日エラー上位）
+  - MCP利用状況（日次の呼び出し回数〈ツール別〉、接続元アプリ別の回数、よく聞かれた品目、MCPのエラー）
+    - MCPのエラーは既存のエラー監視には含めず、MCP欄に分けて表示
+    - MCPの集計ビューがまだ無いとき（スキーマ反映前）は、MCP欄だけに案内を表示し、他の欄は通常どおり表示
 
 ### 10-3. 注意点
 
 - `visitor_id` はブラウザのデータ削除や環境差分で変わるため、UUは推定値です。
 - `usage_events` は anon insert を許可しています。必要に応じて Supabase 側で追加制限（レート制限・WAF等）を設定してください。
+- MCPの記録（`event_type` が `mcp_connect` / `mcp_call`）は利用者を区別しません（`visitor_id` は固定値 `mcp-server`）。claude.ai などのコネクタは各社のサーバーから呼ばれるため、IP や User-Agent では利用者を区別できないためです。
+  - `metadata` には、ツール名、照合後の品目名、数値の引数と検索語、処理時間、エラーかどうか、接続元アプリ（User-Agent などから判定）を記録します。
 
 ## 11. Claude から市況データを使う（MCPサーバー）
 
@@ -235,6 +244,7 @@ grant select on table market_daily_item_stats to anon, authenticated;
 - 読み取り専用（anon キーで `market_daily_item_stats` ビューを読むだけ）。ログイン不要
 - 計算はダッシュボードと同じ（KPI・前週比・相図）。`analytics.js` を変更するときは `dashboard/app.js` も合わせる
 - 取得したデータは10分間キャッシュする
+- 接続と呼び出しは利用状況ログ（`usage_events`）に記録し、`usage-admin.html` の「MCP利用状況」で確認できる（「10. 利用状況ログ」参照）。記録は応答を返した後に行い、失敗しても応答には影響しない
 
 提供するツール:
 
