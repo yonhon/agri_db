@@ -3,10 +3,12 @@ name: Daily Shikyo Ingest
 on:
   workflow_dispatch:
   schedule:
-    # JST 14:30
-    - cron: "30 5 * * *"
-    # 予備実行（JST 16:00）
-    - cron: "0 7 * * *"
+    # 市況PDFは JST 11時台に公開される。GitHub の定時起動は数時間遅れることがあるので早めに置き、
+    # 混雑する毎時0分・30分を避ける
+    # JST 12:17
+    - cron: "17 3 * * *"
+    # 予備実行（JST 14:47）
+    - cron: "47 5 * * *"
 
 jobs:
   ingest:
