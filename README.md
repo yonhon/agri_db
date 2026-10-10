@@ -68,10 +68,10 @@ GitHub Actions の定時起動（`schedule`）は数時間遅れることがあ�
 1. GitHub でトークンを発行する（Settings → Developer settings → Personal access tokens → Fine-grained tokens）
    - Repository access: Only select repositories → このリポジトリだけ
    - Permissions → Repository permissions → Actions: Read and write
-2. Supabase の SQL Editor で、トークンを Vault に登録する（`ghp_xxx` の部分を発行したトークンに置き換える。この SQL は保存しない）
+2. Supabase の SQL Editor で、トークンを Vault に登録する（`github_pat_xxx` の部分を発行したトークンに置き換える。この SQL は保存しない）
 
    ```sql
-   select vault.create_secret('ghp_xxx', 'github_actions_dispatch_token');
+   select vault.create_secret('github_pat_xxx', 'github_actions_dispatch_token');
    ```
 
 3. SQL Editor で `sql/schedule_ingest.sql` を実行する
@@ -92,7 +92,7 @@ select status_code, content, error_msg, created from net._http_response order by
   ```sql
   select vault.update_secret(
     (select id from vault.secrets where name = 'github_actions_dispatch_token'),
-    'ghp_新しいトークン'
+    'github_pat_新しいトークン'
   );
   ```
 
