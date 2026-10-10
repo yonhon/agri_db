@@ -1416,7 +1416,8 @@
 
   // ---- 軌跡・相図（7日移動平均） ----
 
-  // 暦の7日間（その日を含む過去7日）の入荷量合計と、入荷量加重平均の中値。
+  // 暦の7日間（その日を含む過去7日）の、1取引日あたりの入荷量と、入荷量加重平均の中値。
+  // 入荷量を合計ではなく取引日数で割るのは、祝日などで7日間の取引日数が変わっても揺れないようにするため。
   // 取引日が少ない日は null（線を途切れさせる）。
   function rollingSeries(itemName, fromYmd, toYmd) {
     const minDays = Number(config.rollingMinTradingDays) || 3;
@@ -1430,7 +1431,7 @@
           rows.push(r);
         }
       }
-      out.push(rows.length >= minDays ? { date: d, q: sumQuantity(rows), p: weightedPrice(rows) } : { date: d, q: null, p: null });
+      out.push(rows.length >= minDays ? { date: d, q: sumQuantity(rows) / rows.length, p: weightedPrice(rows) } : { date: d, q: null, p: null });
     }
     return out;
   }
@@ -1463,10 +1464,10 @@
       return (v) => v / med;
     }
     const mad = median(values.map((v) => Math.abs(v - med)));
-    let scale = mad * 1.4826;
-    if (!(scale > 1e-9)) {
-      scale = Math.sqrt(values.reduce((a, v) => a + (v - med) ** 2, 0) / Math.max(1, values.length)) || 1;
-    }
+    // 値がほとんど動かない期間が長いと MAD が 0 に近づき、Zスコアが極端に大きくなるため下限を設ける
+    // （水準は中央値の2%、0 を中心にする変化率は1ポイント）
+    const floor = center === 0 ? 0.01 : Math.abs(med) * 0.02;
+    const scale = Math.max(mad * 1.4826, floor) || 1;
     return (v) => (v - med) / scale;
   }
 
@@ -1479,6 +1480,14 @@
 
   function fmtScaled(v, mode) {
     return mode === "ratio" ? fmtRatio(v) : `${v > 0 ? "+" : ""}${v.toFixed(2)}σ`;
+  }
+
+  // 片側4目盛り以内になる、切りのよい目盛り間隔（1, 2, 5 × 10^n など）
+  function niceStep(maxAbs, factors) {
+    const raw = maxAbs / 4;
+    const base = 10 ** Math.floor(Math.log10(raw));
+    const f = factors.find((x) => x * base >= raw) || 10;
+    return f * base;
   }
 
   // 正規化後の値の範囲から、原点を中心にした対称な軸を作る
@@ -1497,12 +1506,15 @@
         ...extra,
       };
     }
-    const k = Math.max(2, Math.ceil(Math.max(...values.map(Math.abs), 0) * 1.05));
+    // 目盛り間隔を先に決め、軸の端をその倍数にそろえる（必ず 0 を通る）
+    const maxAbs = Math.max(2, Math.max(...values.map(Math.abs), 0) * 1.05);
+    const step = Math.max(1, niceStep(maxAbs, [1, 2, 5]));
+    const k = Math.ceil(maxAbs / step) * step;
     return {
       type: "value",
       min: -k,
       max: k,
-      interval: k <= 4 ? 1 : Math.ceil(k / 4),
+      interval: step,
       name,
       axisLabel: { color: "#516050", formatter: (v) => (v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}σ`) },
       k,
@@ -1571,6 +1583,9 @@
             color: isFocus ? "#b0552a" : "#1f2d20",
             fontSize: 11,
             fontWeight: 700,
+            // 線の上でも読めるよう白で縁取る
+            textBorderColor: "#fff",
+            textBorderWidth: 3,
           },
         };
       }),
@@ -1636,7 +1651,7 @@
     }
 
     const all = tracks.flatMap((t) => t.points.filter((pt) => pt !== "-"));
-    const xAxis = symmetricAxis(all.map((pt) => pt.value[0]), mode, "入荷量（7日合計）");
+    const xAxis = symmetricAxis(all.map((pt) => pt.value[0]), mode, "入荷量（7日間の1取引日平均）");
     const yAxis = symmetricAxis(all.map((pt) => pt.value[1]), mode, "販売価格中値（7日加重平均）");
     const one = mode === "ratio" ? 1 : 0;
     const lo = (axis) => axis.min;
@@ -1658,7 +1673,7 @@
             }
             return [
               `<b>${pt.item}</b>（${pt.date} までの7日）`,
-              `入荷量: ${Math.round(pt.q).toLocaleString("ja-JP")}（${fmtScaled(pt.value[0], mode)}）`,
+              `入荷量（1取引日平均）: ${Math.round(pt.q).toLocaleString("ja-JP")}（${fmtScaled(pt.value[0], mode)}）`,
               `販売価格中値: ${fmtPrice(pt.p)}（${fmtScaled(pt.value[1], mode)}）`,
             ].join("<br/>");
           },
@@ -1750,12 +1765,14 @@
     const xAxis = symmetricAxis(all.map((pt) => pt.value[0]), mode, "販売価格中値の水準");
     let yAxis;
     if (mode === "ratio") {
-      const yMax = Math.ceil((Math.max(10, ...all.map((pt) => Math.abs(pt.value[1]))) * 1.1) / 10) * 10;
+      const maxAbs = Math.max(10, ...all.map((pt) => Math.abs(pt.value[1]))) * 1.1;
+      const step = niceStep(maxAbs, [1, 2, 2.5, 5]);
+      const yMax = Math.ceil(maxAbs / step) * step;
       yAxis = {
         type: "value",
         min: -yMax,
         max: yMax,
-        interval: yMax / 4,
+        interval: step,
         name: "7日前からの変化",
         axisLabel: { color: "#516050", formatter: (v) => `${v > 0 ? "+" : ""}${Math.round(v)}%` },
         k: 0,
