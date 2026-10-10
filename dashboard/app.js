@@ -1646,7 +1646,7 @@
     return mode === "ratio" ? "表示期間の中央値との比" : "Zスコア（中央値・MAD基準）";
   }
 
-  // 相図（横軸: 水準 / 縦軸: 7日前からの変化）。spec.key が "p" なら販売価格中値、"q" なら入荷量（1取引日平均）
+  // 相図（横軸: 水準 / 縦軸: 前週比 = 7日前からの変化）。spec.key が "p" なら販売価格中値、"q" なら入荷量（1取引日平均）
   function renderPhasePortrait(spec) {
     const { chart, metaEl, noticeEl, key } = spec;
     const range = getPeriodRange();
@@ -1665,7 +1665,7 @@
       // 7日前との比較のため、表示期間の7日前から計算する
       const rolled = rollingSeries(item, shiftYmd(range.start, -7), range.end);
       const inPeriod = rolled.slice(7);
-      // 縦軸の「7日前からの変化」は区間 [t−7, t] の真ん中（t−3.5日）の速さを表すため、
+      // 縦軸の前週比（7日前からの変化）は区間 [t−7, t] の真ん中（t−3.5日）の速さを表すため、
       // 横軸の水準も同じ時刻（t−4日と t−3日の平均）にそろえる。
       // 最新日の水準を使うと時刻が3.5日ずれ、偶然の揺れで点が斜めに流れる。
       const raw = inPeriod.map((r, i) => {
@@ -1705,6 +1705,8 @@
     }
 
     const all = tracks.flatMap((t) => t.points.filter((pt) => pt !== "-"));
+    // 軸の名前は前週比マップと同じにする（最新の点では、前週比マップの値とほぼ同じ量になる）
+    const changeName = key === "p" ? "中値 前週比" : "入荷量 前週比";
     const xAxis = symmetricAxis(all.map((pt) => pt.value[0]), mode, key === "p" ? "販売価格中値の水準" : "入荷量の水準（1取引日平均）");
     let yAxis;
     if (mode === "ratio") {
@@ -1716,12 +1718,12 @@
         min: -yMax,
         max: yMax,
         interval: step,
-        name: "7日前からの変化",
+        name: changeName,
         axisLabel: { color: "#516050", formatter: (v) => `${v > 0 ? "+" : ""}${Math.round(v)}%` },
         k: 0,
       };
     } else {
-      yAxis = symmetricAxis(all.map((pt) => pt.value[1]), "z", "7日前からの変化");
+      yAxis = symmetricAxis(all.map((pt) => pt.value[1]), "z", changeName);
     }
     const one = mode === "ratio" ? 1 : 0;
     const maxQty = Math.max(...tracks.map((t) => t.last.q));
@@ -1763,7 +1765,7 @@
             return [
               `<b>${pt.item}</b>`,
               levelLine(pt),
-              `7日前からの変化（${formatYmd(shiftYmd(pt.date, -11))}頃→${formatYmd(shiftYmd(pt.date, -4))}頃）: ${fmtChange(pt)}`,
+              `${changeName}（${formatYmd(shiftYmd(pt.date, -11))}頃→${formatYmd(shiftYmd(pt.date, -4))}頃）: ${fmtChange(pt)}`,
             ].join("<br/>");
           },
         },
