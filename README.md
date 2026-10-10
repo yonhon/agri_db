@@ -227,3 +227,56 @@ grant select on table market_daily_item_stats to anon, authenticated;
 
 - `visitor_id` はブラウザのデータ削除や環境差分で変わるため、UUは推定値です。
 - `usage_events` は anon insert を許可しています。必要に応じて Supabase 側で追加制限（レート制限・WAF等）を設定してください。
+
+## 11. Claude から市況データを使う（MCPサーバー）
+
+`supabase/functions/agri-mcp/` に、市況データを Claude から使うための MCP（Model Context Protocol）サーバーがあります。Supabase Edge Function として動き、claude.ai の「カスタムコネクタ」に登録すると、会話の中で Claude がデータを取得して答えます。
+
+- 読み取り専用（anon キーで `market_daily_item_stats` ビューを読むだけ）。ログイン不要
+- 計算はダッシュボードと同じ（KPI・前週比・相図）。`analytics.js` を変更するときは `dashboard/app.js` も合わせる
+- 取得したデータは10分間キャッシュする
+
+提供するツール:
+
+| ツール | 内容 |
+| --- | --- |
+| `list_items` | 品目一覧（最新の中値・入荷量・取引日数）。品目名の検索（ひらがな・部分一致可） |
+| `get_item_history` | 1品目の日次の入荷量・中値・高値・安値 |
+| `get_price_ranking` | 最新日の中値の、過去14日中央値からの乖離ランキング（割高・割安） |
+| `get_weekly_change` | 直近7日と前の7日の、入荷量・中値の変化率（品薄で値上がり 等の判定付き） |
+| `get_phase_state` | 価格・入荷量の相図の局面（例: 高値圏から下落、出回りのピークへ）と過去の軌跡 |
+
+### 配備（初回のみ設定が必要）
+
+1. Supabase のダッシュボードで Personal Access Token を発行する（Account → Access Tokens）
+2. GitHub リポジトリの Settings → Secrets and variables → Actions に `SUPABASE_ACCESS_TOKEN` として登録する
+3. `main` に `supabase/**` の変更が入ると `.github/workflows/deploy_mcp.yml` がテスト → 配備 → 動作確認を行う（Actions 画面から手動実行も可）
+
+配備先の URL:
+
+```
+https://byhthaiwbutqstrqbwwc.supabase.co/functions/v1/agri-mcp
+```
+
+### claude.ai に登録する
+
+1. claude.ai の設定 → コネクタ →「カスタムコネクタを追加」
+2. 名前（例: 沖縄市況）と上記の URL を入力して追加（認証の設定は不要）
+3. 会話の入力欄のツール設定でコネクタを有効にして質問する
+
+質問の例:
+
+- 「今日いちばん割安な野菜は？」
+- 「レタスとズッキーニは今、値動きのどの局面？入荷量の動きと合わせて教えて」
+- 「島バナナの直近30日の価格推移を表にして」
+
+### ローカルでのテスト
+
+```bash
+node --test tests/agri-mcp.test.mjs
+```
+
+注意:
+
+- URL を知っていれば誰でも呼び出せます（データは市況PDFの公開情報）。Supabase の Edge Functions の無料枠（呼び出し回数）を超える使われ方をしていないか、Supabase のダッシュボードで確認してください
+- 相図（`get_phase_state`）は移動平均のため、最新の点はデータ最新日の約1週間前の状態です
