@@ -21,19 +21,13 @@
 
     <main class="container">
       <header class="page-header">
-        <div>
-          <div class="brand">
-            <img class="brand-logo" src="./icons/A_full_color.svg" alt="いのーファーム" width="98" height="88" />
-            <div class="brand-text">
-              <p class="eyebrow">Okinawa Market Monitor</p>
-              <h1>沖縄市況ダッシュボード</h1>
-              <p class="subtitle">本日の販売価格中値の割高・割安とトレンドを1画面で確認</p>
-            </div>
+        <div class="brand">
+          <img class="brand-logo" src="./icons/A_full_color.svg" alt="いのーファーム" width="98" height="88" />
+          <div class="brand-text">
+            <p class="eyebrow">Okinawa Market Monitor</p>
+            <h1>沖縄市況ダッシュボード</h1>
+            <p class="subtitle">本日の販売価格中値の割高・割安とトレンドを1画面で確認</p>
           </div>
-          <section id="recentUpdatesSection" class="recent-updates" hidden>
-            <h2 class="updates-title">直近一週間のアップデート</h2>
-            <ul id="recentUpdatesList" class="updates-list"></ul>
-          </section>
         </div>
         <div class="toolbar">
           <div class="control-group" role="group" aria-label="期間選択">
@@ -42,9 +36,12 @@
             <button class="period-btn" data-days="90">90日</button>
             <button class="period-btn" data-days="all">全期間</button>
           </div>
-          <button id="reloadBtn" class="reload-btn">更新</button>
         </div>
       </header>
+      <section id="recentUpdatesSection" class="recent-updates" hidden>
+        <h2 class="updates-title">直近一週間のアップデート</h2>
+        <ul id="recentUpdatesList" class="updates-list"></ul>
+      </section>
       <div class="wave-rule" aria-hidden="true"></div>
 
       <section>

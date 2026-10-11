@@ -27,7 +27,6 @@
   const corrTopPairsBodyEl = document.getElementById("corrTopPairsBody");
   const corrBottomPairsBodyEl = document.getElementById("corrBottomPairsBody");
   const corrFocusRankingBodyEl = document.getElementById("corrFocusRankingBody");
-  const reloadBtn = document.getElementById("reloadBtn");
   const periodButtons = Array.from(document.querySelectorAll(".period-btn"));
 
   const state = {
@@ -1925,10 +1924,6 @@
       state.corrFocusItem = corrFocusItemEl.value;
       saveSelectorPrefs();
       renderAll();
-    });
-
-    reloadBtn.addEventListener("click", () => {
-      window.location.reload();
     });
 
     window.addEventListener("resize", () => {
