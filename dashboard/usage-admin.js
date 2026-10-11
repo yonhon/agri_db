@@ -258,7 +258,7 @@
         legend: { top: 0, type: "scroll" },
         grid: { left: 48, right: 24, top: 40, bottom: 44 },
         xAxis: { type: "category", data: dates.map(fmtYmd) },
-        yAxis: { type: "value", splitLine: { lineStyle: { color: "#e7eee4" } } },
+        yAxis: { type: "value", splitLine: { lineStyle: { color: "#e6eded" } } },
         series: [
           {
             name: "日次UU",
@@ -312,7 +312,7 @@
         legend: { top: 0, type: "scroll" },
         grid: { left: 48, right: 24, top: 40, bottom: 44 },
         xAxis: { type: "category", data: months.map(fmtYm) },
-        yAxis: { type: "value", splitLine: { lineStyle: { color: "#e7eee4" } } },
+        yAxis: { type: "value", splitLine: { lineStyle: { color: "#e6eded" } } },
         series: [
           {
             name: "月次UU",
@@ -347,7 +347,7 @@
         tooltip: { trigger: "axis" },
         grid: { left: 48, right: 24, top: 20, bottom: 44 },
         xAxis: { type: "category", data: dates.map(fmtYmd) },
-        yAxis: { type: "value", splitLine: { lineStyle: { color: "#e7eee4" } } },
+        yAxis: { type: "value", splitLine: { lineStyle: { color: "#e6eded" } } },
         series: [
           {
             name: "error件数",
@@ -440,7 +440,7 @@
       legend: { top: 0, type: "scroll" },
       grid: { left: 8, right: 16, top: 40, bottom: 8, containLabel: true },
       xAxis: { type: "category", data: days.map(fmtYmd) },
-      yAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#e7eee4" } } },
+      yAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#e6eded" } } },
     };
     mcpDailyChart.setOption(
       {

@@ -755,11 +755,11 @@
         legend: { top: 0, type: "scroll" },
         // 軸ラベルの桁数に合わせて余白を自動調整する
         grid: { left: 8, right: 22, top: 36, bottom: 8, containLabel: true },
-        xAxis: { type: "category", data: dates.map(formatYmd), axisLabel: { color: "#516050" } },
+        xAxis: { type: "category", data: dates.map(formatYmd), axisLabel: { color: "#4f6164" } },
         yAxis: {
           type: "value",
-          axisLabel: { color: "#516050", formatter: "{value}円" },
-          splitLine: { lineStyle: { color: "#e7eee4" } },
+          axisLabel: { color: "#4f6164", formatter: "{value}円" },
+          splitLine: { lineStyle: { color: "#e6eded" } },
         },
         color: TREND_COLORS,
         series,
@@ -779,18 +779,18 @@
         tooltip: { ...TOOLTIP_BASE, trigger: "axis" },
         legend: { top: 0, data: ["入荷量", "販売価格中値"] },
         grid: { left: 8, right: 8, top: 44, bottom: 8, containLabel: true },
-        xAxis: { type: "category", data: xData, axisLabel: { color: "#516050" } },
+        xAxis: { type: "category", data: xData, axisLabel: { color: "#4f6164" } },
         yAxis: [
           {
             type: "value",
             name: "入荷量",
-            axisLabel: { color: "#516050" },
-            splitLine: { lineStyle: { color: "#e7eee4" } },
+            axisLabel: { color: "#4f6164" },
+            splitLine: { lineStyle: { color: "#e6eded" } },
           },
           {
             type: "value",
             name: "価格",
-            axisLabel: { color: "#516050", formatter: "{value}円" },
+            axisLabel: { color: "#4f6164", formatter: "{value}円" },
           },
         ],
         series: [
@@ -799,7 +799,7 @@
             type: "bar",
             yAxisIndex: 0,
             barMaxWidth: 18,
-            itemStyle: { color: "#78b98b", borderRadius: [4, 4, 0, 0] },
+            itemStyle: { color: "#6fb3b5", borderRadius: [4, 4, 0, 0] },
             data: itemRows.map((r) => r.quantity),
           },
           {
@@ -1009,7 +1009,7 @@
             text: "表示できるデータがありません。",
             left: "center",
             top: "middle",
-            textStyle: { color: "#5b6c5a", fontSize: 14, fontWeight: 500 },
+            textStyle: { color: "#56696c", fontSize: 14, fontWeight: 500 },
           },
         },
         true
@@ -1062,7 +1062,7 @@
             text: "販売価格中値の7日加重平均データがありません。",
             left: "center",
             top: "middle",
-            textStyle: { color: "#5b6c5a", fontSize: 14, fontWeight: 500 },
+            textStyle: { color: "#56696c", fontSize: 14, fontWeight: 500 },
           },
         },
         true
@@ -1101,14 +1101,14 @@
           type: "value",
           min: 0,
           max: axisMax,
-          axisLabel: { color: "#516050", formatter: (v) => `${Math.round(v).toLocaleString("ja-JP")}円` },
-          splitLine: { lineStyle: { color: "#e7eee4" } },
+          axisLabel: { color: "#4f6164", formatter: (v) => `${Math.round(v).toLocaleString("ja-JP")}円` },
+          splitLine: { lineStyle: { color: "#e6eded" } },
         },
         yAxis: {
           type: "category",
           inverse: true,
           data: yItems,
-          axisLabel: { color: "#2e3f2f", fontSize: 11 },
+          axisLabel: { color: "#2c3e41", fontSize: 11 },
           axisTick: { show: false },
         },
         dataZoom: [
@@ -1136,12 +1136,12 @@
             type: "bar",
             data: values,
             barWidth: 3,
-            itemStyle: { color: "#9ec8ac" },
+            itemStyle: { color: "#9ccdcd" },
             emphasis: { disabled: true },
             markLine: {
               symbol: "none",
               label: { show: false },
-              lineStyle: { color: "#94a590", type: "dashed", width: 1 },
+              lineStyle: { color: "#93a4a5", type: "dashed", width: 1 },
               data: [{ xAxis: q25 }, { xAxis: medianPrice }, { xAxis: q75 }],
             },
             z: 1,
@@ -1280,7 +1280,7 @@
             text: "比較できる品目がありません。",
             left: "center",
             top: "middle",
-            textStyle: { color: "#5b6c5a", fontSize: 14, fontWeight: 500 },
+            textStyle: { color: "#56696c", fontSize: 14, fontWeight: 500 },
           },
         },
         true
@@ -1320,12 +1320,12 @@
           ? { color: "#d06f3b", borderColor: "#7a3514", borderWidth: 2, opacity: 1 }
           : isSelected
             ? { color: trendColor(trendIdx), borderColor: "#fff", borderWidth: 1.5, opacity: 0.95 }
-            : { color: "#a3b0a1", opacity: 0.6 },
+            : { color: "#a2afb0", opacity: 0.6 },
         label: {
           show: labeled.has(d.item_name),
           formatter: "{b}",
           position: "top",
-          color: isFocus ? "#b0552a" : isSelected ? "#1f2d20" : "#5b6c5a",
+          color: isFocus ? "#b0552a" : isSelected ? "#1d2c2f" : "#56696c",
           fontSize: 11,
           fontWeight: isSelected ? 700 : 400,
         },
@@ -1360,9 +1360,9 @@
           name: "入荷量 前週比",
           nameLocation: "middle",
           nameGap: 30,
-          nameTextStyle: { color: "#516050" },
-          axisLabel: { color: "#516050", formatter: (v) => `${Math.round(v)}%` },
-          splitLine: { lineStyle: { color: "#e7eee4" } },
+          nameTextStyle: { color: "#4f6164" },
+          axisLabel: { color: "#4f6164", formatter: (v) => `${Math.round(v)}%` },
+          splitLine: { lineStyle: { color: "#e6eded" } },
         },
         yAxis: {
           type: "value",
@@ -1372,9 +1372,9 @@
           name: "中値 前週比",
           nameLocation: "middle",
           nameGap: 40,
-          nameTextStyle: { color: "#516050" },
-          axisLabel: { color: "#516050", formatter: (v) => `${Math.round(v)}%` },
-          splitLine: { lineStyle: { color: "#e7eee4" } },
+          nameTextStyle: { color: "#4f6164" },
+          axisLabel: { color: "#4f6164", formatter: (v) => `${Math.round(v)}%` },
+          splitLine: { lineStyle: { color: "#e6eded" } },
         },
         series: [
           {
@@ -1387,14 +1387,14 @@
               silent: true,
               data: [
                 [{ coord: [-xMax, 0], itemStyle: { color: "rgba(206, 77, 65, 0.07)" } }, { coord: [0, yMax] }],
-                [{ coord: [0, -yMax], itemStyle: { color: "rgba(26, 118, 162, 0.07)" } }, { coord: [xMax, 0] }],
+                [{ coord: [0, -yMax], itemStyle: { color: "rgba(42, 86, 168, 0.07)" } }, { coord: [xMax, 0] }],
               ],
             },
             markLine: {
               silent: true,
               symbol: "none",
               label: { show: false },
-              lineStyle: { color: "#94a590", type: "solid", width: 1 },
+              lineStyle: { color: "#93a4a5", type: "solid", width: 1 },
               data: [{ xAxis: 0 }, { yAxis: 0 }],
             },
             z: 1,
@@ -1533,7 +1533,7 @@
         min: 2 ** -k,
         max: 2 ** k,
         name,
-        axisLabel: { color: "#516050", formatter: (v) => fmtRatio(v) },
+        axisLabel: { color: "#4f6164", formatter: (v) => fmtRatio(v) },
         k,
         ...extra,
       };
@@ -1548,7 +1548,7 @@
       max: k,
       interval: step,
       name,
-      axisLabel: { color: "#516050", formatter: (v) => (v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}σ`) },
+      axisLabel: { color: "#4f6164", formatter: (v) => (v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}σ`) },
       k,
       ...extra,
     };
@@ -1561,8 +1561,8 @@
       ...rest,
       nameLocation: isY ? "end" : "middle",
       nameGap: isY ? 10 : 26,
-      nameTextStyle: { color: "#516050", align: isY ? "left" : "center" },
-      splitLine: { lineStyle: { color: "#e7eee4" } },
+      nameTextStyle: { color: "#4f6164", align: isY ? "left" : "center" },
+      splitLine: { lineStyle: { color: "#e6eded" } },
       axisLine: { onZero: false },
     };
   }
@@ -1612,7 +1612,7 @@
             show: true,
             formatter: pt.item,
             position: "top",
-            color: isFocus ? "#b0552a" : "#1f2d20",
+            color: isFocus ? "#b0552a" : "#1d2c2f",
             fontSize: 11,
             fontWeight: 700,
             // 線の上でも読めるよう白で縁取る
@@ -1629,7 +1629,7 @@
   function renderEmptyChart(chart, text) {
     chart.setOption(
       {
-        title: { text, left: "center", top: "middle", textStyle: { color: "#5b6c5a", fontSize: 14, fontWeight: 500 } },
+        title: { text, left: "center", top: "middle", textStyle: { color: "#56696c", fontSize: 14, fontWeight: 500 } },
       },
       true
     );
@@ -1719,7 +1719,7 @@
         max: yMax,
         interval: step,
         name: changeName,
-        axisLabel: { color: "#516050", formatter: (v) => `${v > 0 ? "+" : ""}${Math.round(v)}%` },
+        axisLabel: { color: "#4f6164", formatter: (v) => `${v > 0 ? "+" : ""}${Math.round(v)}%` },
         k: 0,
       };
     } else {
@@ -1731,7 +1731,7 @@
     // 価格: 左上（安値圏から回復）を赤、右下（高値圏から下落）を青。
     // 入荷量: 右上（多くてさらに増加 = 出回りのピークへ）を青、左下（少なくてさらに減少 = 品薄が深まる）を赤。
     const red = "rgba(206, 77, 65, 0.07)";
-    const blue = "rgba(26, 118, 162, 0.07)";
+    const blue = "rgba(42, 86, 168, 0.07)";
     const none = "rgba(0, 0, 0, 0)";
     const tints =
       key === "p"
@@ -1791,7 +1791,7 @@
               silent: true,
               symbol: "none",
               label: { show: false },
-              lineStyle: { color: "#94a590", type: "solid", width: 1 },
+              lineStyle: { color: "#93a4a5", type: "solid", width: 1 },
               data: [{ xAxis: one }, { yAxis: 0 }],
             },
           },

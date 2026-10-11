@@ -1,14 +1,14 @@
 :root {
-  --bg: #f3f7f1;
+  --bg: #f7f6f1;
   --surface: rgba(255, 255, 255, 0.86);
   --surface-strong: #ffffff;
-  --text: #162015;
-  --muted: #5b6c5a;
-  --line: #d4dfd1;
+  --text: #13262a;
+  --muted: #56696c;
+  --line: #c8d8d7;
   --up: #ce4d41;
-  --down: #1a76a2;
-  --accent: #2f7f56;
-  --shadow: 0 16px 40px rgba(22, 32, 21, 0.08);
+  --down: #2a56a8;
+  --accent: #0b6b72;
+  --shadow: 0 2px 10px rgba(19, 38, 42, 0.04);
 }
 
 * {
@@ -19,8 +19,8 @@ body {
   margin: 0;
   font-family: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", sans-serif;
   color: var(--text);
-  background: radial-gradient(circle at 10% 10%, #e6efe1 0%, transparent 40%),
-    radial-gradient(circle at 85% 85%, #dfefe7 0%, transparent 38%), var(--bg);
+  background: radial-gradient(circle at 10% 10%, #dcecec 0%, transparent 40%),
+    radial-gradient(circle at 85% 85%, #e2f0ee 0%, transparent 38%), var(--bg);
 }
 
 .bg-shape {
@@ -35,7 +35,7 @@ body {
 .bg-shape-a {
   width: 280px;
   height: 280px;
-  background: #8ad0a9;
+  background: #9fd3d1;
   top: -80px;
   left: -60px;
 }
@@ -43,7 +43,7 @@ body {
 .bg-shape-b {
   width: 320px;
   height: 320px;
-  background: #a7cfe8;
+  background: #b8dcea;
   bottom: -90px;
   right: -70px;
 }
@@ -62,7 +62,17 @@ body {
   gap: 16px;
   align-items: flex-start;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+}
+
+/* ロゴの波線を区切りに使う */
+.wave-rule {
+  height: 12px;
+  margin-bottom: 14px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cpath d='M0 6q10-5 20 0t20 0' fill='none' stroke='%230b6b72' stroke-width='1.5'/%3E%3C/svg%3E") repeat-x left center;
+  opacity: 0.4;
+  -webkit-mask-image: linear-gradient(to right, #000 60%, transparent);
+  mask-image: linear-gradient(to right, #000 60%, transparent);
 }
 
 .brand {
@@ -89,6 +99,11 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--accent);
+}
+
+h1,
+h2 {
+  font-family: "Zen Maru Gothic", "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", sans-serif;
 }
 
 h1 {
@@ -118,7 +133,7 @@ h1 {
 .updates-list {
   margin: 0;
   padding-left: 1.2em;
-  color: #2c3d2d;
+  color: #263a3d;
   font-size: 13px;
 }
 
@@ -331,7 +346,7 @@ h2 {
 
 .chip-remove:hover,
 .chip-remove:focus-visible {
-  background: #eef3ec;
+  background: #edf2f2;
   color: var(--text);
 }
 
@@ -356,11 +371,11 @@ h2 {
   border-radius: 18px 18px 0 0;
   background: var(--surface-strong);
   color: var(--text);
-  box-shadow: 0 -8px 32px rgba(22, 32, 21, 0.18);
+  box-shadow: 0 -8px 32px rgba(19, 38, 42, 0.18);
 }
 
 .item-sheet::backdrop {
-  background: rgba(22, 32, 21, 0.4);
+  background: rgba(19, 38, 42, 0.4);
 }
 
 .item-sheet-inner {
@@ -411,7 +426,7 @@ h2 {
   gap: 12px;
   min-height: 48px;
   padding: 0 4px;
-  border-bottom: 1px solid #eef3ec;
+  border-bottom: 1px solid #edf2f2;
   font-size: 15px;
   cursor: pointer;
 }
@@ -518,7 +533,7 @@ h2 {
 }
 
 .quad-down {
-  background: rgba(26, 118, 162, 0.12);
+  background: rgba(42, 86, 168, 0.12);
 }
 
 /* 背景色のない象限のキャプション */
@@ -594,9 +609,9 @@ h2 {
 .legend-chip {
   padding: 4px 7px;
   border-radius: 999px;
-  border: 1px solid #d6ddd4;
+  border: 1px solid #d5dddc;
   font-size: 11px;
-  color: #29402f;
+  color: #253c40;
 }
 
 .corr-grid {
@@ -624,7 +639,7 @@ h2 {
 .corr-table th,
 .corr-table td {
   padding: 10px 12px;
-  border-bottom: 1px solid #edf2eb;
+  border-bottom: 1px solid #ebf1f0;
   white-space: nowrap;
 }
 
@@ -632,7 +647,7 @@ h2 {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f6faf5;
+  background: #f4f8f8;
   font-weight: 700;
   text-align: left;
 }
@@ -656,7 +671,7 @@ h2 {
 .score-band-2 { background: #4f78aa; color: #fff; }
 .score-band-3 { background: #80a9d1; color: #173047; }
 .score-band-4 { background: #b6d0e6; color: #1e3749; }
-.score-band-5 { background: #e9ece8; color: #314237; }
+.score-band-5 { background: #e8ecec; color: #2f4144; }
 .score-band-6 { background: #f2ccc7; color: #552925; }
 .score-band-7 { background: #e59f93; color: #59251f; }
 .score-band-8 { background: #d67163; color: #fff; }
