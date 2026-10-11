@@ -7,3 +7,5 @@ tmp
 experiment
 # LINE 配信用の別リポジトリ（yonhon/agri_line_digest）をここに置く
 agri_line_digest/
+
+.claude/settings.local.json
