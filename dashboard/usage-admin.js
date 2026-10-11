@@ -11,7 +11,6 @@
   const mcpItemsBodyEl = document.getElementById("mcpItemsBody");
   const mcpErrorsBodyEl = document.getElementById("mcpErrorsBody");
   const periodButtons = Array.from(document.querySelectorAll(".period-btn"));
-  const reloadBtn = document.getElementById("reloadBtn");
 
   const dailyTrendChart = echarts.init(document.getElementById("dailyTrendChart"));
   const monthlyTrendChart = echarts.init(document.getElementById("monthlyTrendChart"));
@@ -521,10 +520,6 @@
         periodButtons.forEach((b) => b.classList.toggle("is-active", b === btn));
         renderAll();
       });
-    });
-
-    reloadBtn.addEventListener("click", () => {
-      window.location.reload();
     });
 
     window.addEventListener("resize", () => {

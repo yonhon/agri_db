@@ -22,10 +22,13 @@
 
     <main class="container">
       <header class="page-header">
-        <div>
-          <p class="eyebrow">Usage Monitoring</p>
-          <h1>利用状況ログ</h1>
-          <p class="subtitle">日次・月次のUU/PVとエラー発生状況、MCP（AIからの利用）を確認</p>
+        <div class="brand">
+          <img class="brand-logo" src="./icons/A_full_color.svg" alt="いのーファーム" width="98" height="88" />
+          <div class="brand-text">
+            <p class="eyebrow">Usage Monitoring</p>
+            <h1>利用状況ログ</h1>
+            <p class="subtitle">日次・月次のUU/PVとエラー発生状況、MCP（AIからの利用）を確認</p>
+          </div>
         </div>
         <div class="toolbar">
           <div class="control-group" role="group" aria-label="日次期間選択">
@@ -33,9 +36,9 @@
             <button class="period-btn" data-days="90">90日</button>
           </div>
           <a class="nav-link-btn" href="./index.html">ダッシュボードへ戻る</a>
-          <button id="reloadBtn" class="reload-btn">更新</button>
         </div>
       </header>
+      <div class="wave-rule" aria-hidden="true"></div>
 
       <section class="usage-grid">
         <article class="panel">

@@ -183,13 +183,6 @@ button {
   color: #fff;
 }
 
-.reload-btn {
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface-strong);
-}
-
 .panel-heading {
   display: flex;
   justify-content: space-between;
