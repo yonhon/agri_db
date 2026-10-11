@@ -65,6 +65,23 @@ body {
   margin-bottom: 16px;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand-logo {
+  flex: none;
+  width: auto;
+  height: 88px;
+}
+
+.brand-text {
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+
 .eyebrow {
   margin: 0;
   font-family: "M PLUS 1p", sans-serif;
@@ -670,6 +687,21 @@ h2 {
 @media (max-width: 640px) {
   h1 {
     font-size: 24px;
+  }
+
+  .brand {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .brand-logo {
+    height: 72px;
+  }
+
+  .brand-text {
+    padding-left: 0;
+    border-left: 0;
   }
 
   .kpi-grid {
