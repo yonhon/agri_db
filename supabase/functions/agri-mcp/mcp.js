@@ -2,9 +2,15 @@
 // クライアントが POST した JSON-RPC メッセージに、JSON で応答する（SSE は使わない）。
 import { TOOLS, runTool } from "./tools.js";
 import { clientLabel, clip } from "./usage.js";
+import { ICON_PNG_128 } from "./icon.js";
 
 const SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
-const SERVER_INFO = { name: "agri-db-okinawa-market", title: "沖縄市況データ", version: "0.1.0" };
+const SERVER_INFO = {
+  name: "agri-db-okinawa-market",
+  title: "沖縄市況データ",
+  version: "0.1.0",
+  icons: [{ src: ICON_PNG_128, mimeType: "image/png", sizes: ["128x128"] }],
+};
 
 const INSTRUCTIONS = [
   "沖縄協同青果の市況PDFを毎日取り込んだデータ（品目ごとの日次の入荷量と販売価格）を返すサーバーです。",

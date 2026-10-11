@@ -46,6 +46,9 @@ test("initialize negotiates protocol version and returns instructions", async ()
   assert.equal(r.result.protocolVersion, "2025-03-26");
   assert.ok(r.result.capabilities.tools);
   assert.match(r.result.instructions, /販売価格中値/);
+  const [icon] = r.result.serverInfo.icons;
+  assert.equal(icon.mimeType, "image/png");
+  assert.match(icon.src, /^data:image\/png;base64,[A-Za-z0-9+/]+=*$/);
   const unknown = await rpc("initialize", { protocolVersion: "1999-01-01" });
   assert.equal(unknown.result.protocolVersion, "2025-06-18");
 });
