@@ -118,7 +118,7 @@ export const TOOLS = [
   {
     name: "get_item_history",
     description:
-      "1品目の日ごとの市況（入荷量、販売価格中値・高値・安値）。価格推移や入荷量の確認に使う。価格は円、入荷量は市況PDFの数量。",
+      "1品目の日ごとの市況（入荷量、販売価格中値・高値・安値）。価格推移や入荷量の確認に使う。価格は1kgあたりの円、入荷量は kg（市況PDFの数量）。",
     inputSchema: {
       type: "object",
       properties: {
