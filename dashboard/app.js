@@ -142,6 +142,30 @@
     recentUpdatesSectionEl.hidden = false;
   }
 
+  function setupMcpConnectorCopy() {
+    const urlEl = document.getElementById("mcpConnectorUrl");
+    const btn = document.getElementById("mcpConnectorCopy");
+    if (!urlEl || !btn) {
+      return;
+    }
+    if (!navigator.clipboard) {
+      btn.hidden = true;
+      return;
+    }
+    const label = btn.textContent;
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(urlEl.textContent.trim());
+        btn.textContent = "コピーしました";
+      } catch (_) {
+        btn.textContent = "コピーできませんでした";
+      }
+      setTimeout(() => {
+        btn.textContent = label;
+      }, 2000);
+    });
+  }
+
   function appendTableCell(rowEl, text, className, title) {
     const td = document.createElement("td");
     td.textContent = text;
@@ -1937,6 +1961,7 @@
   }
 
   async function main() {
+    setupMcpConnectorCopy();
     if (!config.supabaseUrl || !config.supabaseAnonKey || config.supabaseUrl.includes("YOUR-PROJECT-REF")) {
       setStatus("config.js の Supabase 設定を入力してください。");
       return;

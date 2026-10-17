@@ -42,6 +42,16 @@
         <h2 class="updates-title">直近一週間のアップデート</h2>
         <ul id="recentUpdatesList" class="updates-list"></ul>
       </section>
+      <section class="mcp-connector" aria-labelledby="mcpConnectorTitle">
+        <h2 id="mcpConnectorTitle" class="updates-title">AIから市況データを使う（MCPコネクタ）</h2>
+        <p class="mcp-connector-text">
+          Claude や ChatGPT などのAIの設定で、次のURLをコネクタとして追加すると（ログイン不要）、「今日いちばん割安な野菜は？」「レタスは今どの局面？」のように話しかけるだけで、割高・割安のランキング、前週比、相図の局面、日々の推移をもとにAIが分析して答えます。
+        </p>
+        <div class="mcp-connector-url">
+          <code id="mcpConnectorUrl">https://byhthaiwbutqstrqbwwc.supabase.co/functions/v1/agri-mcp</code>
+          <button type="button" id="mcpConnectorCopy" class="mcp-copy-btn">URLをコピー</button>
+        </div>
+      </section>
       <div class="wave-rule" aria-hidden="true"></div>
 
       <section>

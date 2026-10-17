@@ -141,6 +141,47 @@ h1 {
   margin: 2px 0;
 }
 
+.mcp-connector {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.mcp-connector-text {
+  margin: 0 0 6px;
+  color: #263a3d;
+  font-size: 13px;
+}
+
+.mcp-connector-url {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.mcp-connector-url code {
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.mcp-copy-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .toolbar {
   display: flex;
   gap: 10px;
