@@ -149,8 +149,36 @@ h1 {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.mcp-connector summary {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mcp-connector summary::-webkit-details-marker {
+  display: none;
+}
+
+.mcp-connector summary::before {
+  content: "▶";
+  color: var(--accent);
+  font-size: 14px;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+.mcp-connector[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.mcp-connector summary .updates-title {
+  margin: 0;
+}
+
 .mcp-connector-text {
-  margin: 0 0 6px;
+  margin: 6px 0 6px;
   color: #263a3d;
   font-size: 13px;
 }
