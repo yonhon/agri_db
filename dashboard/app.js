@@ -40,6 +40,8 @@
     corrFocusItem: "",
     // 軌跡・相図の正規化: "ratio" = 中央値比（対数軸） / "z" = 頑健なZスコア
     phaseScale: "ratio",
+    // 直近の行だけで描画し、古い行を取得している間 true
+    loadingOlder: false,
     analyticsClient: null,
   };
   const UPDATES_JSON_PATH = "./updates.json";
@@ -408,46 +410,90 @@
     return map;
   }
 
-  async function fetchAllRows(client) {
+  // Supabase は1回に最大1000行しか返さないため、先頭ページで件数を受け取り、残りのページは並列に取る
+  async function fetchRows(client, applyFilter) {
     const pageSize = 1000;
-    let from = 0;
-    const rows = [];
-
-    while (true) {
-      const { data, error } = await client
-        .from("market_daily_item_stats")
-        .select("sale_date,item_name,quantity,avg_price,high_price,low_price")
+    const fetchPage = async (from) => {
+      const { data, error, count } = await applyFilter(
+        client
+          .from("market_daily_item_stats")
+          .select("sale_date,item_name,quantity,avg_price,high_price,low_price", from === 0 ? { count: "exact" } : {})
+      )
         .order("sale_date", { ascending: true })
         .order("item_name", { ascending: true })
         .range(from, from + pageSize - 1);
-
       if (error) {
         throw error;
       }
+      return { data: data || [], count };
+    };
 
-      if (!data || data.length === 0) {
-        break;
-      }
-
-      data.forEach((r) => {
-        rows.push({
-          sale_date: r.sale_date,
-          item_name: r.item_name,
-          quantity: asNumber(r.quantity),
-          // avg_price はPDFの「中値」列（販売価格中値）
-          avg_price: asNumber(r.avg_price),
-          high_price: asNumber(r.high_price),
-          low_price: asNumber(r.low_price),
-        });
-      });
-
-      if (data.length < pageSize) {
-        break;
-      }
-      from += pageSize;
+    const first = await fetchPage(0);
+    if (first.count == null) {
+      throw new Error("データの件数を取得できませんでした。");
     }
+    const offsets = [];
+    for (let from = pageSize; from < first.count; from += pageSize) {
+      offsets.push(from);
+    }
+    const rest = await Promise.all(offsets.map((from) => fetchPage(from)));
 
-    return rows;
+    return [first, ...rest].flatMap((page) =>
+      page.data.map((r) => ({
+        sale_date: r.sale_date,
+        item_name: r.item_name,
+        quantity: asNumber(r.quantity),
+        // avg_price はPDFの「中値」列（販売価格中値）
+        avg_price: asNumber(r.avg_price),
+        high_price: asNumber(r.high_price),
+        low_price: asNumber(r.low_price),
+      }))
+    );
+  }
+
+  // 表示期間の描画に要る、最新日からさかのぼる日数。相図は表示期間の7日前から計算し、
+  // その移動平均がさらに8日前までを使う。KPI の比較期間と前週比マップ（14日）もこの範囲に収まる。
+  function lookbackDays(periodDays) {
+    return Math.max(periodDays + 14, Number(config.kpiBaselineDays) || 14);
+  }
+
+  function todayJst() {
+    return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(new Date());
+  }
+
+  function applyRows(rows) {
+    rows.sort((a, b) => a.sale_date.localeCompare(b.sale_date));
+    state.rows = rows;
+    state.seriesByItem = buildSeriesByItem(rows);
+  }
+
+  // 直近の期間を先に描画し、それより古い行は並行して取得して、届いたら全体を描き直す。
+  // 全期間を表示するときは、最初から全行を待つ。
+  async function loadRows(client) {
+    if (!(state.periodDays > 0)) {
+      applyRows(await fetchRows(client, (q) => q));
+      return;
+    }
+    const lookback = lookbackDays(state.periodDays);
+    // 最新日は前日や休市前の日になるため、7日の余裕をみて今日からさかのぼる
+    const cutoff = shiftYmd(todayJst(), -(lookback + 7));
+    const recentPromise = fetchRows(client, (q) => q.gte("sale_date", cutoff));
+    const olderPromise = fetchRows(client, (q) => q.lt("sale_date", cutoff));
+    // 直近の取得が先に失敗したとき、古い行の失敗が未処理のまま残らないようにする
+    olderPromise.catch(() => {});
+
+    const recent = await recentPromise;
+    // 取り込みが止まって最新日が古いと、直近の行だけでは表示期間を満たさないので、先に描かない
+    if (recent.length && shiftYmd(getLatestDate(recent), -lookback) >= cutoff) {
+      applyRows(recent);
+      state.loadingOlder = true;
+      renderAll();
+    }
+    try {
+      applyRows((await olderPromise).concat(recent));
+    } finally {
+      state.loadingOlder = false;
+    }
   }
 
   function getItemCandidates(rows) {
@@ -1856,7 +1902,9 @@
       renderCorrelationTables(periodRows);
     }
     renderUnitPriceLollipop(periodRows);
-    setStatus(`表示期間: ${periodLabel(state.periodDays)} | データ件数: ${periodRows.length}`);
+    setStatus(
+      `表示期間: ${periodLabel(state.periodDays)} | データ件数: ${periodRows.length}${state.loadingOlder ? " | 過去のデータを読み込み中..." : ""}`
+    );
   }
 
   function attachEvents() {
@@ -1970,7 +2018,8 @@
     // 期間ボタンの初期表示に反映するため、イベント登録より先に復元する
     loadSelectorPrefs();
     attachEvents();
-    await renderRecentUpdates();
+    // アップデート一覧はデータの取得と並行して読む
+    void renderRecentUpdates();
     setStatus("Supabaseからデータを取得中...");
 
     try {
@@ -1985,9 +2034,7 @@
           referrer: document.referrer || "",
         },
       });
-      state.rows = await fetchAllRows(client);
-      state.rows.sort((a, b) => a.sale_date.localeCompare(b.sale_date));
-      state.seriesByItem = buildSeriesByItem(state.rows);
+      await loadRows(client);
       if (!state.rows.length) {
         setStatus("表示できるデータがありません。");
         return;
