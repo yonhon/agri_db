@@ -837,53 +837,124 @@
     );
   }
 
-  function renderComboChart(periodRows) {
+  // 保存する画像の右下にだけ入れる出典（ブラウザ上のグラフには出さない）
+  const COMBO_IMAGE_CREDIT = "データ：沖縄協同青果 市況　@inoo_farm";
+  // 保存する画像の大きさ（CSSピクセル）。画面幅によらず同じ大きさで書き出す
+  const COMBO_IMAGE_SIZE = { width: 800, height: 660, pixelRatio: 2 };
+
+  function getComboItemRows(periodRows) {
     const itemRows = periodRows.filter((r) => r.item_name === state.focusItem);
     itemRows.sort((a, b) => a.sale_date.localeCompare(b.sale_date));
-    const xData = itemRows.map((r) => formatYmd(r.sale_date));
+    return itemRows;
+  }
 
-    comboChart.setOption(
-      {
-        animationDuration: 400,
-        tooltip: { ...TOOLTIP_BASE, trigger: "axis" },
-        legend: { top: 0, data: ["入荷量", "販売価格中値"] },
-        grid: { left: 8, right: 8, top: 44, bottom: 8, containLabel: true },
-        xAxis: { type: "category", data: xData, axisLabel: { color: "#4f6164" } },
-        yAxis: [
-          {
-            type: "value",
-            name: "入荷量",
-            axisLabel: { color: "#4f6164", formatter: "{value}kg" },
-            splitLine: { lineStyle: { color: "#e6eded" } },
-          },
-          {
-            type: "value",
-            name: "価格",
-            axisLabel: { color: "#4f6164", formatter: "{value}円" },
-          },
-        ],
-        series: [
-          {
-            name: "入荷量",
-            type: "bar",
-            yAxisIndex: 0,
-            barMaxWidth: 18,
-            itemStyle: { color: "#6fb3b5", borderRadius: [4, 4, 0, 0] },
-            data: itemRows.map((r) => r.quantity),
-          },
-          {
-            name: "販売価格中値",
-            type: "line",
-            yAxisIndex: 1,
-            smooth: true,
-            symbolSize: 6,
-            itemStyle: { color: "#d06f3b" },
-            data: itemRows.map((r) => r.avg_price),
-          },
-        ],
+  // グラフのタイトル「品目名　2026/10/27〜11/09」。年が変わるときは終わりにも年を付ける
+  function comboTitleText(item, itemRows) {
+    if (!itemRows.length) {
+      return item || "";
+    }
+    const first = itemRows[0].sale_date;
+    const last = itemRows[itemRows.length - 1].sale_date;
+    const fy = first.slice(0, 4);
+    const ly = last.slice(0, 4);
+    const range = `${fy}/${formatYmd(first)}〜${ly === fy ? "" : `${ly}/`}${formatYmd(last)}`;
+    return `${item}　${range}`;
+  }
+
+  function buildComboOption(itemRows, { forImage = false } = {}) {
+    const option = {
+      animation: !forImage,
+      animationDuration: 400,
+      title: {
+        text: comboTitleText(state.focusItem, itemRows),
+        left: forImage ? 12 : 0,
+        top: forImage ? 10 : 0,
+        textStyle: { fontSize: 15, fontWeight: 600, color: "#13262a" },
       },
-      true
-    );
+      tooltip: { ...TOOLTIP_BASE, trigger: "axis" },
+      legend: { top: forImage ? 38 : 28, data: ["入荷量", "販売価格中値"] },
+      grid: forImage
+        ? { left: 16, right: 16, top: 92, bottom: 34, containLabel: true }
+        : { left: 8, right: 8, top: 84, bottom: 8, containLabel: true },
+      xAxis: { type: "category", data: itemRows.map((r) => formatYmd(r.sale_date)), axisLabel: { color: "#4f6164" } },
+      yAxis: [
+        {
+          type: "value",
+          name: "入荷量",
+          axisLabel: { color: "#4f6164", formatter: "{value}kg" },
+          splitLine: { lineStyle: { color: "#e6eded" } },
+        },
+        {
+          type: "value",
+          name: "価格",
+          axisLabel: { color: "#4f6164", formatter: "{value}円/kg" },
+          // 左軸と目盛りの位置がずれるので、補助線は左軸の分だけにする
+          splitLine: { show: false },
+        },
+      ],
+      series: [
+        {
+          name: "入荷量",
+          type: "bar",
+          yAxisIndex: 0,
+          barMaxWidth: 18,
+          itemStyle: { color: "#6fb3b5", borderRadius: [4, 4, 0, 0] },
+          tooltip: { valueFormatter: (v) => (v == null ? "-" : `${Number(v).toLocaleString("ja-JP")}kg`) },
+          data: itemRows.map((r) => r.quantity),
+        },
+        {
+          name: "販売価格中値",
+          type: "line",
+          yAxisIndex: 1,
+          smooth: true,
+          symbolSize: 6,
+          itemStyle: { color: "#d06f3b" },
+          tooltip: { valueFormatter: (v) => (v == null ? "-" : `${fmtPrice(v)}/kg`) },
+          data: itemRows.map((r) => r.avg_price),
+        },
+      ],
+    };
+    if (forImage) {
+      option.graphic = [
+        {
+          type: "text",
+          right: 8,
+          bottom: 6,
+          style: { text: COMBO_IMAGE_CREDIT, fill: "#7a8b8d", fontSize: 11 },
+        },
+      ];
+    }
+    return option;
+  }
+
+  function renderComboChart(periodRows) {
+    comboChart.setOption(buildComboOption(getComboItemRows(periodRows)), true);
+  }
+
+  // 画面外に同じグラフを決まった大きさで描き、出典を入れたPNGを保存する
+  function saveComboImage() {
+    const itemRows = getComboItemRows(state.periodRows);
+    if (!itemRows.length) {
+      return;
+    }
+    const host = document.createElement("div");
+    host.style.cssText = `position: fixed; left: -10000px; top: 0; width: ${COMBO_IMAGE_SIZE.width}px; height: ${COMBO_IMAGE_SIZE.height}px;`;
+    document.body.appendChild(host);
+    const chart = echarts.init(host, null, { width: COMBO_IMAGE_SIZE.width, height: COMBO_IMAGE_SIZE.height });
+    try {
+      chart.setOption(buildComboOption(itemRows, { forImage: true }));
+      const url = chart.getDataURL({ type: "png", pixelRatio: COMBO_IMAGE_SIZE.pixelRatio, backgroundColor: "#ffffff" });
+      const compact = (ymd) => ymd.replaceAll("-", "");
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${state.focusItem}_${compact(itemRows[0].sale_date)}-${compact(itemRows[itemRows.length - 1].sale_date)}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } finally {
+      chart.dispose();
+      host.remove();
+    }
   }
 
   function median(values) {
@@ -1997,6 +2068,8 @@
       saveSelectorPrefs();
       renderAll();
     });
+
+    document.getElementById("comboSaveBtn").addEventListener("click", saveComboImage);
 
     window.addEventListener("resize", () => {
       trendChart.resize();

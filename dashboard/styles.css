@@ -412,6 +412,19 @@ h2 {
   color: var(--text);
 }
 
+.save-img-btn {
+  flex: none;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
 .chip-add {
   min-height: 36px;
   padding: 0 14px;
