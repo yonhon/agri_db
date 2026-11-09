@@ -839,8 +839,10 @@
 
   // 保存する画像の右下にだけ入れる出典（ブラウザ上のグラフには出さない）
   const COMBO_IMAGE_CREDIT = "データ：沖縄協同青果 市況　@inoo_farm";
-  // 保存する画像の大きさ（CSSピクセル）。画面幅によらず同じ大きさで書き出す
-  const COMBO_IMAGE_SIZE = { width: 800, height: 660, pixelRatio: 2 };
+  // 保存する画像の大きさ。ブラウザで見るグラフと同じくらいの大きさ（CSSピクセル）で描き、
+  // 文字とグラフの大きさの比をブラウザと同程度にしたうえで、pixelRatio で解像度を上げる
+  const COMBO_IMAGE_SIZE = { width: 560, height: 460, pixelRatio: 3 };
+  const COMBO_LEGEND = ["入荷量", "販売価格中値"];
 
   function getComboItemRows(periodRows) {
     const itemRows = periodRows.filter((r) => r.item_name === state.focusItem);
@@ -848,34 +850,18 @@
     return itemRows;
   }
 
-  // グラフのタイトル「品目名　2026/10/27〜11/09」。年が変わるときは終わりにも年を付ける
-  function comboTitleText(item, itemRows) {
-    if (!itemRows.length) {
-      return item || "";
-    }
-    const first = itemRows[0].sale_date;
-    const last = itemRows[itemRows.length - 1].sale_date;
-    const fy = first.slice(0, 4);
-    const ly = last.slice(0, 4);
-    const range = `${fy}/${formatYmd(first)}〜${ly === fy ? "" : `${ly}/`}${formatYmd(last)}`;
-    return `${item}　${range}`;
-  }
-
   function buildComboOption(itemRows, { forImage = false } = {}) {
     const option = {
       animation: !forImage,
       animationDuration: 400,
-      title: {
-        text: comboTitleText(state.focusItem, itemRows),
-        left: forImage ? 12 : 0,
-        top: forImage ? 10 : 0,
-        textStyle: { fontSize: 15, fontWeight: 600, color: "#13262a" },
-      },
       tooltip: { ...TOOLTIP_BASE, trigger: "axis" },
-      legend: { top: forImage ? 38 : 28, data: ["入荷量", "販売価格中値"] },
+      // 画像では凡例をグラフの中の空いた角に縦に並べる（位置は saveComboImage で決める）
+      legend: forImage
+        ? { orient: "vertical", left: 0, top: 0, itemGap: 6, padding: 6, backgroundColor: "rgba(255, 255, 255, 0.95)", borderRadius: 6, data: COMBO_LEGEND }
+        : { top: 0, data: COMBO_LEGEND },
       grid: forImage
-        ? { left: 16, right: 16, top: 92, bottom: 34, containLabel: true }
-        : { left: 8, right: 8, top: 84, bottom: 8, containLabel: true },
+        ? { left: 12, right: 12, top: 64, bottom: 28, containLabel: true }
+        : { left: 8, right: 8, top: 54, bottom: 8, containLabel: true },
       xAxis: { type: "category", data: itemRows.map((r) => formatYmd(r.sale_date)), axisLabel: { color: "#4f6164" } },
       yAxis: [
         {
@@ -915,10 +901,16 @@
       ],
     };
     if (forImage) {
+      option.title = {
+        text: `${state.focusItem}　入荷量 × 価格（2軸）`,
+        left: 10,
+        top: 8,
+        textStyle: { fontSize: 15, fontWeight: 600, color: "#13262a" },
+      };
       option.graphic = [
         {
           type: "text",
-          right: 8,
+          right: 10,
           bottom: 6,
           style: { text: COMBO_IMAGE_CREDIT, fill: "#7a8b8d", fontSize: 11 },
         },
@@ -931,7 +923,81 @@
     comboChart.setOption(buildComboOption(getComboItemRows(periodRows)), true);
   }
 
-  // 画面外に同じグラフを決まった大きさで描き、出典を入れたPNGを保存する
+  // 縦並びの凡例の大きさ（目安）。記号 25px + 間 5px + 文字、上下左右の余白 6px
+  function comboLegendSize() {
+    const ctx = document.createElement("canvas").getContext("2d");
+    ctx.font = "12px sans-serif";
+    const textWidth = Math.max(...COMBO_LEGEND.map((t) => ctx.measureText(t).width));
+    return { width: 25 + 5 + textWidth + 12, height: COMBO_LEGEND.length * 14 + (COMBO_LEGEND.length - 1) * 6 + 12 };
+  }
+
+  // 凡例はグラフの中の4つの角のどれかに縦に並べて置く。
+  // 線と、棒の上端（値の読み取りに要る部分）にかからない角を選ぶ。棒の下の方は情報がないので重なってもよい。
+  // どの角でもかかってしまうときは、かかりの最も少ない角（同じなら左下）にする
+  function placeComboLegend(chart, itemRows) {
+    const rect = chart.getModel().getComponent("grid", 0).coordinateSystem.getRect();
+    const size = comboLegendSize();
+    const inset = 6;
+    const barTops = [];
+    const linePts = [];
+    itemRows.forEach((r, i) => {
+      if (r.quantity != null) {
+        const [x, y] = chart.convertToPixel({ seriesIndex: 0 }, [i, r.quantity]);
+        barTops.push({ x0: x - 9, x1: x + 9, y });
+      }
+      if (r.avg_price != null) {
+        linePts.push(chart.convertToPixel({ seriesIndex: 1 }, [i, r.avg_price]));
+      }
+    });
+    // 線は点の間を細かく区切り、その点が凡例の枠に入るかで見る（なめらかな曲線のふくらみ分、枠を広げて判定する）
+    const samples = [];
+    linePts.forEach((p, i) => {
+      samples.push(p);
+      const q = linePts[i + 1];
+      if (q) {
+        for (let k = 1; k < 12; k += 1) {
+          samples.push([p[0] + ((q[0] - p[0]) * k) / 12, p[1] + ((q[1] - p[1]) * k) / 12]);
+        }
+      }
+    });
+    const xl = rect.x + inset;
+    const xr = rect.x + rect.width - inset - size.width;
+    const yt = rect.y + inset;
+    const yb = rect.y + rect.height - inset - size.height;
+    // 同じかかり具合なら、この順で選ぶ（左下を優先）
+    const corners = [
+      { left: xl, top: yb },
+      { left: xl, top: yt },
+      { left: xr, top: yt },
+      { left: xr, top: yb },
+    ];
+    let best = corners[0];
+    let bestScore = Infinity;
+    corners.forEach((c) => {
+      const pad = 8;
+      const box = { x0: c.left - pad, x1: c.left + size.width + pad, y0: c.top - pad, y1: c.top + size.height + pad };
+      let score = 0;
+      barTops.forEach((b) => {
+        const w = Math.min(box.x1, b.x1) - Math.max(box.x0, b.x0);
+        // 棒の上端が凡例の枠の高さの範囲にあるときだけ、かかったとみなす
+        if (w > 0 && b.y >= box.y0 && b.y <= box.y1) {
+          score += w;
+        }
+      });
+      samples.forEach(([x, y]) => {
+        if (x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1) {
+          score += 20;
+        }
+      });
+      if (score < bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    });
+    chart.setOption({ legend: { left: Math.round(best.left), top: Math.round(best.top) } });
+  }
+
+  // 画面外に同じグラフを決まった大きさで描き、タイトルと出典を入れたPNGを保存する
   function saveComboImage() {
     const itemRows = getComboItemRows(state.periodRows);
     if (!itemRows.length) {
@@ -943,6 +1009,12 @@
     const chart = echarts.init(host, null, { width: COMBO_IMAGE_SIZE.width, height: COMBO_IMAGE_SIZE.height });
     try {
       chart.setOption(buildComboOption(itemRows, { forImage: true }));
+      try {
+        placeComboLegend(chart, itemRows);
+      } catch (err) {
+        // 位置を決められないときは、左上の初期位置のまま保存する
+        console.warn("凡例の位置を決められませんでした", err);
+      }
       const url = chart.getDataURL({ type: "png", pixelRatio: COMBO_IMAGE_SIZE.pixelRatio, backgroundColor: "#ffffff" });
       const compact = (ymd) => ymd.replaceAll("-", "");
       const link = document.createElement("a");

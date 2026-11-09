@@ -102,7 +102,13 @@
         <article class="panel">
           <div class="panel-heading">
             <h2>入荷量 × 価格（2軸）</h2>
-            <button type="button" id="comboSaveBtn" class="save-img-btn">画像を保存</button>
+            <button type="button" id="comboSaveBtn" class="save-img-btn" aria-label="グラフを画像で保存" title="グラフを画像で保存">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 4v11" />
+                <path d="M7 10l5 5 5-5" />
+                <path d="M5 20h14" />
+              </svg>
+            </button>
           </div>
           <label class="field-label" for="focusItem">対象品目</label>
           <select id="focusItem" class="field"></select>

@@ -414,15 +414,24 @@ h2 {
 
 .save-img-btn {
   flex: none;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--accent);
-  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
   background: transparent;
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 500;
+  color: var(--muted);
   cursor: pointer;
+}
+
+.save-img-btn:hover,
+.save-img-btn:focus-visible {
+  background: rgba(11, 107, 114, 0.08);
+  color: var(--accent);
 }
 
 .chip-add {
