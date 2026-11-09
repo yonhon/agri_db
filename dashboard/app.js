@@ -873,7 +873,8 @@
         {
           type: "value",
           name: "価格",
-          axisLabel: { color: "#4f6164", formatter: "{value}円/kg" },
+          // ブラウザでは短く「円」、保存する画像では単位をはっきり「円/kg」と書く
+          axisLabel: { color: "#4f6164", formatter: forImage ? "{value}円/kg" : "{value}円" },
           // 左軸と目盛りの位置がずれるので、補助線は左軸の分だけにする
           splitLine: { show: false },
         },
@@ -885,7 +886,6 @@
           yAxisIndex: 0,
           barMaxWidth: 18,
           itemStyle: { color: "#6fb3b5", borderRadius: [4, 4, 0, 0] },
-          tooltip: { valueFormatter: (v) => (v == null ? "-" : `${Number(v).toLocaleString("ja-JP")}kg`) },
           data: itemRows.map((r) => r.quantity),
         },
         {
@@ -895,7 +895,6 @@
           smooth: true,
           symbolSize: 6,
           itemStyle: { color: "#d06f3b" },
-          tooltip: { valueFormatter: (v) => (v == null ? "-" : `${fmtPrice(v)}/kg`) },
           data: itemRows.map((r) => r.avg_price),
         },
       ],
