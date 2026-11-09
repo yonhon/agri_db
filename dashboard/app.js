@@ -853,7 +853,7 @@
           {
             type: "value",
             name: "入荷量",
-            axisLabel: { color: "#4f6164" },
+            axisLabel: { color: "#4f6164", formatter: "{value}kg" },
             splitLine: { lineStyle: { color: "#e6eded" } },
           },
           {
